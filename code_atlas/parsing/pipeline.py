@@ -32,10 +32,7 @@ def run_parsing(
     store = IRStore(manifest.repo_id, ir_dir=ir_dir)
     repo_root = Path(manifest.local_path)
 
-    parseable = [
-        f for f in manifest.change_set
-        if f.language not in _SKIP_LANGUAGES
-    ]
+    parseable = [f for f in manifest.change_set if f.language not in _SKIP_LANGUAGES]
     skipped = len(manifest.change_set) - len(parseable)
     if skipped:
         logger.info("Skipping %d non-structural files (JSON/CSS/HTML/…)", skipped)
@@ -59,7 +56,14 @@ def run_parsing(
                 result = future.result()
                 results.append(result)
                 status = "✓" if result.success else "✗"
-                logger.debug("%s %s  (%d nodes)", status, file_record.path, len(result.nodes))
+                logger.debug(
+                    "%s %s  (%d nodes, %d calls, %d imports, %d inherits)",
+                    status, file_record.path,
+                    len(result.nodes),
+                    len(result.call_edges),
+                    len(result.import_edges),
+                    len(result.inheritance_edges),
+                )
             except Exception as exc:
                 logger.warning("Unexpected error parsing %s: %s", file_record.path, exc)
                 results.append(ParseResult(
@@ -69,10 +73,21 @@ def run_parsing(
                     errors=[str(exc)],
                 ))
 
+    # ── Persist to IR store ────────────────────────────────────────────────────
     for result in results:
         store.delete_file(result.file_path)
+
         if result.nodes:
             store.upsert_nodes(result.nodes)
+
+        if result.call_edges:
+            store.upsert_call_edges(result.call_edges)
+        if result.import_edges:
+            store.upsert_import_edges(result.import_edges)
+        if result.inheritance_edges:
+            store.upsert_inheritance_edges(result.inheritance_edges)
+        if result.reference_edges:
+            store.upsert_reference_edges(result.reference_edges)
 
     report.results = results
 
@@ -82,8 +97,11 @@ def run_parsing(
 
     stats = store.stats()
     logger.info(
-        "IR store: %d total nodes | %s",
+        "IR store: %d nodes | %d call_edges | %d import_edges | %d inherit_edges | %s",
         stats["total_nodes"],
+        stats["call_edges"],
+        stats["import_edges"],
+        stats["inheritance_edges"],
         " | ".join(f"{k}: {v}" for k, v in stats["by_kind"].items()),
     )
 

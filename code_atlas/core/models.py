@@ -104,58 +104,181 @@ class RepoManifest(BaseModel):
         ]
         return "\n".join(lines)
 
+
 class NodeKind(str, Enum):
-    """The type of code entity this IR node represents."""
-    MODULE    = "module"    
-    CLASS     = "class"
-    FUNCTION  = "function"  
-    METHOD    = "method"     
-    VARIABLE  = "variable"   
-    IMPORT    = "import" 
+    """
+    Universal node types matching the spec's five categories:
+    Structural / Object-Oriented / Execution / Dependency / Behavior / Type
+    """
+    # Structural
+    FILE       = "file"
+    MODULE     = "module"
+    PACKAGE    = "package"
+    NAMESPACE  = "namespace"
+
+    # Object-Oriented
+    CLASS      = "class"
+    INTERFACE  = "interface"
+    STRUCT     = "struct"
+    ENUM       = "enum"
+
+    # Execution
+    FUNCTION    = "function"
+    METHOD      = "method"
+    CONSTRUCTOR = "constructor"
+    LAMBDA      = "lambda"
+
+    # Dependency
+    IMPORT  = "import"
+    EXPORT  = "export"
+    INCLUDE = "include"
+    REQUIRE = "require"
+
+    # Behavior
+    CALL_EXPRESSION  = "call_expression"
+    ASSIGNMENT       = "assignment"
+    RETURN_STATEMENT = "return_statement"
+    CONDITIONAL      = "conditional"
+    LOOP             = "loop"
+
+    # Type
+    TYPE_ANNOTATION = "type_annotation"
+    GENERIC_TYPE    = "generic_type"
+    UNION_TYPE      = "union_type"
+
+    # Legacy alias
+    VARIABLE = "variable"
+
+
+class Parameter(BaseModel):
+    name: str
+    type: Optional[str] = None     
+    def __repr__(self) -> str:
+        return f"{self.name}: {self.type}" if self.type else self.name
 
 
 class IRNode(BaseModel):
-    id: str
-    name: str
-    kind: NodeKind
-    file_path: str
+    """
+    Language-agnostic Intermediate Representation node.
+
+    Matches the spec's ASTNode schema:
+        node_id, node_type (kind), language, name, value,
+        start_line, end_line, start_column (start_col), end_column (end_col),
+        parent (parent_id), children ([node_id]), file_path
+    """
+    id:         str
+    name:       str
+    kind:       NodeKind
+    file_path:  str
+    language:   str
+
     start_line: int
-    end_line: int
-    language: str
-    parent_class: Optional[str] = None
+    end_line:   int
+    start_col:  int = 0
+    end_col:    int = 0
+
+    parent_id: Optional[str]  = None
+    children:  list[str]      = Field(default_factory=list)
+
+    value: Optional[str] = None
+
+    typed_parameters: list[Parameter] = Field(default_factory=list)
+
     parameters: list[str] = Field(default_factory=list)
-    return_type: Optional[str] = None
-    docstring: Optional[str] = None
-    signature: Optional[str] = None
-    calls: list[str] = Field(default_factory=list)
-    imports: list[str] = Field(default_factory=list)
-    bases: list[str] = Field(default_factory=list)
-    decorators: list[str] = Field(default_factory=list)
-    is_exported: bool = True
+
+    parent_class: Optional[str] = None
+    return_type:  Optional[str] = None
+    docstring:    Optional[str] = None
+    signature:    Optional[str] = None
+    calls:        list[str]     = Field(default_factory=list)
+    imports:      list[str]     = Field(default_factory=list)
+    bases:        list[str]     = Field(default_factory=list)
+    decorators:   list[str]     = Field(default_factory=list)
+    is_exported:  bool          = True
+
     model_config = {"use_enum_values": True}
 
     def __repr__(self) -> str:
-        return f"<IRNode {self.kind}:{self.name} @ {self.file_path}:{self.start_line}>"
+        return f"<IRNode {self.kind}:{self.name} @ {self.file_path}:{self.start_line}:{self.start_col}>"
+
+
+
+class CallEdge(BaseModel):
+    """
+    Spec: CallEdge { caller_function, callee_function, file_id, line_number }
+    """
+    caller_id:      str
+    callee_name:    str
+    callee_id:      Optional[str] = None
+    file_path:      str = ""
+    line_number:    int = 0
+    col_number:     int = 0
+    is_method_call: bool = False
+
+
+class ImportEdge(BaseModel):
+    """
+    Spec: ImportEdge { source_file, target_module }
+    """
+    source_file:   str
+    target_module: str
+    alias:         Optional[str] = None
+    line_number:   int = 0
+    is_default:    bool = False
+    is_wildcard:   bool = False
+
+
+class InheritanceEdge(BaseModel):
+    """
+    Spec: InheritanceEdge { child_class, parent_class }
+    """
+    child_id:    str
+    parent_name: str
+    parent_id:   Optional[str] = None
+    kind:        str = "inherits"  
+
+class ReferenceEdge(BaseModel):
+    """
+    Spec: ReferenceEdge { source_node, target_node }
+    """
+    source_id:   str
+    target_name: str
+    target_id:   Optional[str] = None
+    line_number: int = 0
+
 
 
 class ParseResult(BaseModel):
     file_path: str
-    language: str
-    nodes: list[IRNode] = Field(default_factory=list)
-    errors: list[str] = Field(default_factory=list)
-    success: bool = True
+    language:  str
+    nodes:     list[IRNode]          = Field(default_factory=list)
+    errors:    list[str]             = Field(default_factory=list)
+    success:   bool                  = True
+
+    call_edges:        list[CallEdge]        = Field(default_factory=list)
+    import_edges:      list[ImportEdge]      = Field(default_factory=list)
+    inheritance_edges: list[InheritanceEdge] = Field(default_factory=list)
+    reference_edges:   list[ReferenceEdge]   = Field(default_factory=list)
 
     @property
     def functions(self) -> list[IRNode]:
-        return [n for n in self.nodes if n.kind in (NodeKind.FUNCTION, NodeKind.METHOD)]
+        return [n for n in self.nodes if n.kind in (
+            NodeKind.FUNCTION, NodeKind.METHOD,
+            NodeKind.CONSTRUCTOR, NodeKind.LAMBDA,
+        )]
 
     @property
     def classes(self) -> list[IRNode]:
-        return [n for n in self.nodes if n.kind == NodeKind.CLASS]
+        return [n for n in self.nodes if n.kind in (
+            NodeKind.CLASS, NodeKind.INTERFACE,
+            NodeKind.STRUCT, NodeKind.ENUM,
+        )]
 
     @property
     def imports(self) -> list[IRNode]:
-        return [n for n in self.nodes if n.kind == NodeKind.IMPORT]
+        return [n for n in self.nodes if n.kind in (
+            NodeKind.IMPORT, NodeKind.REQUIRE, NodeKind.INCLUDE,
+        )]
 
     def __repr__(self) -> str:
         return (
@@ -165,14 +288,9 @@ class ParseResult(BaseModel):
 
 
 class ParsingReport(BaseModel):
-    """
-    Aggregate output of Phase 2 — all ParseResults for a repo's change set.
-    This is the input contract for Phase 3 (Graph Building).
-    """
-    repo_id: str
+    repo_id:   str
     parsed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    results: list[ParseResult] = Field(default_factory=list)
+    results:   list[ParseResult] = Field(default_factory=list)
 
     @computed_field 
     @property
@@ -184,25 +302,110 @@ class ParsingReport(BaseModel):
 
     @computed_field  
     @property
+    def all_call_edges(self) -> list[CallEdge]:
+        edges = []
+        for r in self.results:
+            edges.extend(r.call_edges)
+        return edges
+
+    @computed_field  
+    @property
+    def all_import_edges(self) -> list[ImportEdge]:
+        edges = []
+        for r in self.results:
+            edges.extend(r.import_edges)
+        return edges
+
+    @computed_field 
+    @property
+    def all_inheritance_edges(self) -> list[InheritanceEdge]:
+        edges = []
+        for r in self.results:
+            edges.extend(r.inheritance_edges)
+        return edges
+
+    @computed_field 
+    @property
+    def all_reference_edges(self) -> list[ReferenceEdge]:
+        edges = []
+        for r in self.results:
+            edges.extend(r.reference_edges)
+        return edges
+
+    @computed_field  
+    @property
     def failed_files(self) -> list[str]:
         return [r.file_path for r in self.results if not r.success]
 
-    @computed_field 
+    @computed_field  
     @property
     def total_nodes(self) -> int:
         return sum(len(r.nodes) for r in self.results)
 
     def summary(self) -> str:
         lines = [
-            f"Repo        : {self.repo_id}",
-            f"Files parsed: {len(self.results)}",
-            f"Total nodes : {self.total_nodes}",
-            f"Failed files: {len(self.failed_files)}",
+            f"Repo         : {self.repo_id}",
+            f"Files parsed : {len(self.results)}",
+            f"Total nodes  : {self.total_nodes}",
+            f"Call edges   : {len(self.all_call_edges)}",
+            f"Import edges : {len(self.all_import_edges)}",
+            f"Inherit edges: {len(self.all_inheritance_edges)}",
+            f"Failed files : {len(self.failed_files)}",
         ]
         if self.failed_files:
             for fp in self.failed_files[:5]:
                 lines.append(f"  ✗ {fp}")
         return "\n".join(lines)
 
+
+class EdgeKind(str, Enum):
+    CONTAINS   = "contains"
+    CALLS      = "calls"
+    IMPORTS    = "imports"
+    INHERITS   = "inherits"
+    IMPLEMENTS = "implements"
+    DEFINES    = "defines"
+    REFERENCES = "references"
+
+
+class GraphEdge(BaseModel):
+    source_id: str
+    target_id: str
+    kind: EdgeKind
+    weight: float = 1.0
+    metadata: dict = Field(default_factory=dict)
+    model_config = {"use_enum_values": True}
+
+    def __repr__(self) -> str:
+        return f"<Edge {self.kind}: {self.source_id[:30]} → {self.target_id[:30]}>"
+
+
+class GraphStats(BaseModel):
+    repo_id:      str
+    built_at:     datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    node_count:   int = 0
+    edge_count:   int = 0
+    orphan_count: int = 0
+    nodes_by_kind: dict[str, int] = Field(default_factory=dict)
+    edges_by_kind: dict[str, int] = Field(default_factory=dict)
+    most_called:   list[tuple[str, int]] = Field(default_factory=list)
+    most_complex:  list[tuple[str, int]] = Field(default_factory=list)
+
+    def summary(self) -> str:
+        lines = [
+            f"Repo         : {self.repo_id}",
+            f"Nodes        : {self.node_count}",
+            f"Edges        : {self.edge_count}",
+            f"Orphans      : {self.orphan_count}",
+            f"Nodes/kind   : {self.nodes_by_kind}",
+            f"Edges/kind   : {self.edges_by_kind}",
+        ]
+        if self.most_called:
+            top = ", ".join(f"{n}({c})" for n, c in self.most_called[:5])
+            lines.append(f"Most called  : {top}")
+        if self.most_complex:
+            top = ", ".join(f"{n}({c})" for n, c in self.most_complex[:5])
+            lines.append(f"Most complex : {top}")
+        return "\n".join(lines)
 
 
