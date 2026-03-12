@@ -10,6 +10,13 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.table import Table
 
+from code_atlas.graph.pipeline import build_graph
+from code_atlas.graph.deadcodeanalysis import find_dead_functions
+from code_atlas.ingestion.pipeline import run_ingestion
+from code_atlas.parsing.pipeline import run_parsing
+from code_atlas.graph.visualiser import GraphVisualizer
+
+
 console = Console()
 
 app = typer.Typer(
@@ -220,6 +227,57 @@ def _bare_handler(ctx, source, branch, force, verbose):
         ctx.invoke(
             ctx.parent.command.commands["ingest"] if ctx.parent else ctx.command,
         )
+
+@app.command()
+def graph(
+    repo: str = typer.Argument(..., help="Git URL or local path to analyze."),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Re-index all files and rebuild graph ignoring cache."
+    ),
+    visualize: bool = typer.Option(
+        False,
+        "--visualize",
+        "--viz",
+        "-z",
+        help="Generate an HTML visualization after building the graph.",
+    ),
+    output: str = typer.Option(
+        "graph.html",
+        "--output",
+        "-o",
+        help="Output filename for the visualization (used only with --visualize).",
+    ),
+):
+    """
+    Build dependency graph for a repository.
+    """
+
+    print("Running ingestion...")
+    manifest = run_ingestion(repo,force=force)
+
+    repo_id = manifest.repo_id
+
+    print("Running parsing...")
+    run_parsing(manifest)
+
+    print("Building graph...")
+    graph = build_graph(repo_id)
+
+    print("\nDead functions:")
+    dead = find_dead_functions(graph)
+
+    for node in dead:
+        data = graph.nodes[node]
+        print(f"{data['name']} ({data['file']}:{data['start_line']})")
+        
+    if visualize:
+        print(f"Generating visualization at {output}...")
+        viz = GraphVisualizer(graph)
+        viz.build_html(output)
+        print(f"Graph visualization generated: {output}")
 
 def main():
     args = _sys.argv[1:]
