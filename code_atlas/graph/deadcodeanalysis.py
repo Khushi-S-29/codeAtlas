@@ -6,28 +6,32 @@ from typing import List
 from code_atlas.core.models import NodeKind
 
 
-def find_dead_functions(graph):
+def find_dead_functions(graph: nx.DiGraph) -> List[str]:
+    """
+    Identify potentially dead functions and methods.
 
-    dead = []
+    A node is considered dead if:
+    - It represents a function or method
+    - It has no incoming edges (nothing calls it)
+    - It is not explicitly exported (public API)
+    """
 
-    for node, data in graph.nodes(data=True):
+    dead_nodes: List[str] = []
+
+    for node_id, data in graph.nodes(data=True):
 
         kind = data.get("kind")
-        name = data.get("name")
-        file = data.get("file")
 
-        if kind not in ("function", "method"):
+        # only analyze functions + methods
+        if kind not in (NodeKind.FUNCTION.value, NodeKind.METHOD.value):
             continue
 
-        # skip CLI entrypoints
-        if name in {"main"}:
+        # exported/public functions are entrypoints
+        if data.get("is_exported"):
             continue
 
-        # skip tests
-        if file and "tests" in file:
-            continue
+        # if nobody calls this function → potential dead code
+        if graph.in_degree(node_id) == 0:
+            dead_nodes.append(node_id)
 
-        if graph.in_degree(node) == 0:
-            dead.append(node)
-
-    return dead
+    return dead_nodes

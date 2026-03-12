@@ -229,13 +229,34 @@ def _bare_handler(ctx, source, branch, force, verbose):
         )
 
 @app.command()
-def graph(repo: str, visualize: bool = False):
+def graph(
+    repo: str = typer.Argument(..., help="Git URL or local path to analyze."),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Re-index all files and rebuild graph ignoring cache."
+    ),
+    visualize: bool = typer.Option(
+        False,
+        "--visualize",
+        "--viz",
+        "-z",
+        help="Generate an HTML visualization after building the graph.",
+    ),
+    output: str = typer.Option(
+        "graph.html",
+        "--output",
+        "-o",
+        help="Output filename for the visualization (used only with --visualize).",
+    ),
+):
     """
     Build dependency graph for a repository.
     """
 
     print("Running ingestion...")
-    manifest = run_ingestion(repo)
+    manifest = run_ingestion(repo,force=force)
 
     repo_id = manifest.repo_id
 
@@ -253,10 +274,10 @@ def graph(repo: str, visualize: bool = False):
         print(f"{data['name']} ({data['file']}:{data['start_line']})")
         
     if visualize:
-        print("Generating visualization...")
+        print(f"Generating visualization at {output}...")
         viz = GraphVisualizer(graph)
-        viz.build_html("graph.html")
-        print("Graph visualization generated: graph.html")
+        viz.build_html(output)
+        print(f"Graph visualization generated: {output}")
 
 def main():
     args = _sys.argv[1:]

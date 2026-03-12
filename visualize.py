@@ -1,24 +1,25 @@
-"""Utility script for building and visualizing a code graph.
+﻿"""Utility script for building and visualizing a code graph.
 
-This used to be hard-coded for the `codeAtlas` repository, but it
-can now operate on *any* repository. You may pass a Git URL or local
-path and the script will ingest/parse the code before constructing
-and visualizing the graph. Alternatively, if you already have a
-`repo_id` from a previous run you can skip ingestion/parsing by using
-`--skip-ingest`.
+This used to be hard‑coded for the `codeAtlas` repository, but it can
+now operate on *any* repository.  For most use cases the primary
+interface is the `code-atlas` Typer CLI, but the standalone script is
+handy for quick experiments or CI tasks.
 
-Usage examples:
+Examples:
 
-    python visualize.py https://github.com/org/repo        # full pipeline
-    python visualize.py test_repo_id --skip-ingest         # already indexed
-    python visualize.py /path/to/local/checkout            # local path
+    python visualize.py https://github.com/org/repo            # full
+pipeline
+    python visualize.py test_repo_id --skip-ingest            # already
+indexed
+    python visualize.py /path/to/local/checkout               # local path
 
 By default the generated HTML is written to `graph.html` but the
 output filename is configurable via `--output`.
 """
 
-import argparse
-import sys
+from __future__ import annotations
+
+import typer
 
 from code_atlas.graph.pipeline import build_graph
 from code_atlas.graph.visualiser import GraphVisualizer
@@ -33,65 +34,64 @@ except ImportError:
     run_parsing = None  # type: ignore
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Build and visualize a dependency graph for any repo."
-    )
-    parser.add_argument(
-        "repo",
-        help="Git URL / local path to analyze, or an existing repo_id."
-    )
-    parser.add_argument(
+def main(
+    repo: str = typer.Argument(..., help="Git URL / local path to analyze, or an existing repo_id."),
+    output: str = typer.Option(
+        "graph.html",
         "--output",
         "-o",
-        default="graph.html",
         help="HTML file to write visualization to.",
-    )
-    parser.add_argument(
+    ),
+    skip_ingest: bool = typer.Option(
+        False,
         "--skip-ingest",
-        action="store_true",
         help=(
             "Treat the `repo` argument as an existing repo_id and skip "
             "ingestion/parsing steps."
         ),
-    )
-    args = parser.parse_args()
+    ),
+) -> None:
+    """Build and visualize a dependency graph for **any** repository.
 
-    if args.skip_ingest:
-        repo_id = args.repo
+    The behaviour mirrors the former argparse-based script; the main
+    change is that options are now defined with Typer, making the
+    generated help text consistent with the rest of the project.
+    """
+
+    if skip_ingest:
+        repo_id = repo
     else:
         if run_ingestion is None or run_parsing is None:
-            parser.error(
-                "code-atlas ingestion/parsing dependencies are not installed"
-            )
+            typer.echo("code-atlas ingestion/parsing dependencies are not installed", err=True)
+            raise typer.Exit(1)
 
-        print("🛠 running ingestion...")
-        manifest = run_ingestion(args.repo)
+        typer.echo("🛠 running ingestion...")
+        manifest = run_ingestion(repo)
         repo_id = manifest.repo_id
 
-        print("🛠 running parsing...")
+        typer.echo("🛠 running parsing...")
         run_parsing(manifest)
 
-    print(f"📦 building graph for '{repo_id}'...")
+    typer.echo(f"📦 building graph for '{repo_id}'...")
     graph = build_graph(repo_id)
 
-    print("🔍 analyzing dead functions...")
+    typer.echo("🔍 analyzing dead functions...")
     dead = find_dead_functions(graph)
     if dead:
-        print(f"Dead functions ({len(dead)}):")
+        typer.echo(f"Dead functions ({len(dead)}):")
         for node in dead:
             data = graph.nodes[node]
-            print(
-    f"{data.get('name','?')} ({data.get('file','?')}:{data.get('start_line','?')})"
-)
+            typer.echo(
+                f"{data.get('name','?')} ({data.get('file','?')}:{data.get('start_line','?')})"
+            )
     else:
-        print("No dead functions detected.")
+        typer.echo("No dead functions detected.")
 
-    print(f"🖼 generating visualization at {args.output}...")
+    typer.echo(f"🖼 generating visualization at {output}...")
     viz = GraphVisualizer(graph)
-    viz.build_html(args.output)
-    print("✅ Graph visualization generated.")
+    viz.build_html(output)
+    typer.echo("✅ Graph visualization generated.")
 
 
 if __name__ == "__main__":
-    main()
+    typer.run(main)
