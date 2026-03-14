@@ -256,7 +256,8 @@ def graph(
     """
 
     print("Running ingestion...")
-    manifest = run_ingestion(repo,force=force)
+    # manifest = run_ingestion(repo,force=force)
+    manifest = _do_ingest(repo, branch=None, force=force, verbose=False)
 
     repo_id = manifest.repo_id
 

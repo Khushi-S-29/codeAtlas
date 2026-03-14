@@ -409,3 +409,25 @@ class GraphStats(BaseModel):
         return "\n".join(lines)
 
 
+
+
+
+
+
+
+
+
+"""
+Core data models used across the CodeAtlas pipeline.
+
+This module defines the structured schemas that represent repositories,
+files, parsed code entities, and graph relationships. During ingestion,
+files are represented using FileRecord and RepoManifest. During parsing,
+language-specific ASTs are converted into a language-agnostic Intermediate
+Representation (IRNode). These nodes and extracted relationships (calls,
+imports, inheritance, etc.) are later used to build the repository’s code
+graph.
+
+In short, this file provides the common data structures that connect
+ingestion → parsing → graph construction.
+"""

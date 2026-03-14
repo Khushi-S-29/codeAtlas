@@ -146,3 +146,26 @@ def _count_lines(path: Path) -> int:
     except OSError:
         pass
     return count
+
+
+# Purpose
+# This module persists ingestion results to disk using SQLite
+# This is the engine of ingestion.
+# It walks through the repository and identifies valid source files.
+
+
+# run_ingestion()
+#       ↓
+# clone repo
+#       ↓
+# scan files
+#       ↓
+# detect language
+#       ↓
+# hash files
+#       ↓
+# detect changes
+#       ↓
+# store metadata
+#       ↓
+# return RepoManifest

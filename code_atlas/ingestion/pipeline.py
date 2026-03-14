@@ -104,3 +104,110 @@ def _resolve_source(
             raise NotADirectoryError(f"Source must be a directory: {local_path}")
         repo_info = get_repo_info(local_path)
         return repo_info, IngestionSource.LOCAL_PATH
+
+
+# This file is the orchestrator of the entire ingestion phase.
+
+# Everything you've seen so far connects here.
+
+
+
+'''
+Step-by-step execution
+Step 1 — Setup configuration
+cfg = config or DEFAULT_INGESTION_CONFIG
+
+Loads ingestion settings.
+
+Step 2 — Prepare directories
+
+Creates:
+
+repos/
+manifests/
+
+Inside .code_atlas.
+
+Step 3 — Resolve source
+
+Function:
+
+_resolve_source()
+
+Determines whether input is:
+
+Git URL
+OR
+Local directory
+
+Example inputs:
+
+https://github.com/user/project
+~/projects/project
+
+If URL:
+
+clone_or_update()
+
+If local path:
+
+get_repo_info()
+Step 4 — Load previous snapshot
+stored_hashes = store.load_snapshot()
+
+This gives:
+
+previous file hashes
+
+Used for incremental detection.
+
+Step 5 — Scan repository
+
+Calls:
+
+scan_repository()
+
+This is where most ingestion logic happens.
+
+Step 6 — Save results
+store.save_records(records)
+
+Saves new metadata.
+
+Step 7 — Save repo metadata
+
+Stores:
+
+git branch
+git commit
+index timestamp
+Step 8 — Create RepoManifest
+RepoManifest(...)
+
+This object contains:
+
+repo info
+file records
+change status
+
+Example structure:
+
+RepoManifest
+ ├ repo_id
+ ├ source
+ ├ files
+ │   ├ FileRecord
+ │   ├ FileRecord
+Step 9 — Logging summary
+manifest.summary()
+
+Example output:
+
+Repo      : github-user-project
+Files     : 120 (14,000 lines)
+New       : 10
+Modified  : 4
+Unchanged : 106
+Deleted   : 0
+Languages : {'python': 70, 'js': 50}
+'''

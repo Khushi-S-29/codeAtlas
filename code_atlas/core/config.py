@@ -91,3 +91,23 @@ SHEBANG_TO_LANGUAGE: dict[str, str] = {
 
 
 DEFAULT_INGESTION_CONFIG = IngestionConfig()
+
+
+
+
+
+
+
+# This file defines:
+
+# Where data will be stored
+
+# What files should be ignored
+
+# What file types are considered source code
+
+# Limits for ingestion
+
+# Language detection rules
+
+# It acts like a central configuration for the ingestion pipeline

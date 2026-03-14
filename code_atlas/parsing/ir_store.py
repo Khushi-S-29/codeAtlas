@@ -471,3 +471,21 @@ def _row_to_node(row: sqlite3.Row) -> IRNode:
         bases=json.loads(row["bases"]),
         decorators=json.loads(row["decorators"]),
     )
+
+
+
+'''
+Why IRStore exists
+
+Parsing generates:
+
+IRNode
+CallEdge
+ImportEdge
+InheritanceEdge
+ReferenceEdge
+
+These must be stored because:
+
+graph builder reads from here
+'''

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import logging
+# from platform import node
 import re
 from typing import Optional
 
+# from rich.live import source
+# from rich.tree import node
+# from huggingface_hub import attr
 import tree_sitter as ts
 
 from code_atlas.core.models import (
@@ -587,14 +591,44 @@ class JavaScriptVisitor(BaseVisitor):
             return self.node_text(ret, source).lstrip(":").strip()
         return None
 
+    # def _extract_calls(self, node: ts.Node, source: bytes) -> list[str]:
+    #     calls: list[str] = []
+    #     body = node.child_by_field_name("body")
+    #     search_root = body if (body and body.type == "statement_block") else node
+    #     for call_node in self.find_all(search_root, "call_expression"):
+    #         callee = self._callee_name(call_node, source)
+    #         if callee:
+    #             calls.append(callee)
+    #     return list(dict.fromkeys(calls))
     def _extract_calls(self, node: ts.Node, source: bytes) -> list[str]:
         calls: list[str] = []
+
         body = node.child_by_field_name("body")
         search_root = body if (body and body.type == "statement_block") else node
+
+    # normal JS calls
         for call_node in self.find_all(search_root, "call_expression"):
             callee = self._callee_name(call_node, source)
             if callee:
                 calls.append(callee)
+
+    # JSX component usage (React)
+        for jsx in self.find_all(search_root, "jsx_element", "jsx_self_closing_element"):
+            name_node = self.find_first(jsx, "identifier")
+            if name_node:
+                comp = self.node_text(name_node, source).strip()
+                if comp and comp[0].isupper():  # React components usually start uppercase
+                 calls.append(comp)
+        for attr in self.find_all(search_root, "jsx_attribute"):
+            value = attr.child_by_field_name("value")
+
+            if value:
+                ident = self.find_first(value, "identifier")
+
+                if ident:
+                    name = self.node_text(ident, source)
+                    calls.append(name)
+
         return list(dict.fromkeys(calls))
 
 def _parse_es_import_target(imp_str: str) -> Optional[str]:
