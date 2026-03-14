@@ -126,3 +126,25 @@ def _url_to_slug(url: str) -> str:
 def _sanitise_slug(slug: str) -> str:
     slug = re.sub(r"[^\w\-]", "_", slug)
     return slug[:128] 
+
+
+
+
+
+
+
+
+# dulwich = pure Python git library
+# Advantages:
+
+# works without git installed
+
+# easier embedding
+
+# platform independent
+
+
+
+# Purpose in the System
+
+# This module fetches the repository source code so ingestion can analyze it.

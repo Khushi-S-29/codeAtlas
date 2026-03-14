@@ -54,3 +54,12 @@ def compute_change_set(
             changed[rel_path] = sha256
 
     return changed
+
+
+
+
+# Purpose
+
+# Detect file changes between runs.
+
+# This allows incremental indexing.

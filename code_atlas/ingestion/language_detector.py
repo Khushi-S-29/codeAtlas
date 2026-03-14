@@ -74,3 +74,12 @@ def is_binary_file(file_path: Path, sample_bytes: int = 8192) -> bool:
         return b"\x00" in chunk
     except OSError:
         return True  
+
+
+
+
+# Purpose
+
+# Identify the programming language of each file.
+
+# Needed because parsers are language-specific.

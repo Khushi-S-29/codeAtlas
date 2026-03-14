@@ -84,3 +84,22 @@ def supported_languages() -> list[str]:
         if get_language(name) is not None:
             available.append(name)
     return sorted(set(available))
+
+
+
+
+
+
+
+
+
+'''
+
+# Purpose
+
+# Loads Tree-sitter language grammars dynamically.
+
+# Tree-sitter is the AST parser used by CodeAtlas.
+python code → python AST
+js code → javascript AST
+'''

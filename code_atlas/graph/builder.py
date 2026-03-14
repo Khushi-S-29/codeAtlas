@@ -52,24 +52,33 @@ class CodeGraphBuilder:
                 start_line=node.start_line,
                 end_line=node.end_line,
                 language=node.language,
+                is_exported=getattr(node, "is_exported", False),
             )
 
     # ---------- CALL RELATIONSHIPS ----------
 
     def _add_call_edges(self, nodes: Iterable[IRNode]) -> None:
-        """
-        Create CALL edges between nodes.
-        """
-        name_to_id = {node.name: node.id for node in nodes}
 
+        name_to_ids = {}
+
+    # build lookup
         for node in nodes:
+            name_to_ids.setdefault(node.name, []).append(node.id)
+
+    # add edges
+        for node in nodes:
+
             if not node.calls:
                 continue
 
             for call in node.calls:
-                target = name_to_id.get(call)
 
-                if target:
+             leaf = call.split(".")[-1]
+
+             targets = name_to_ids.get(call) or name_to_ids.get(leaf)
+
+             if targets:
+                for target in targets:
                     self.graph.add_edge(
                         node.id,
                         target,

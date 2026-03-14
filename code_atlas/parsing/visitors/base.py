@@ -83,3 +83,28 @@ class BaseVisitor(ABC):
                         return stripped.strip() or None
             break  
         return None
+    
+
+
+
+# Purpose:
+
+# shared utilities used by all language visitors
+
+
+
+    '''
+Nodes:
+    MODULE
+    CLASS
+    FUNCTION
+    METHOD
+    IMPORT
+    VARIABLE
+
+Edges:
+    CALLS
+    IMPORTS
+    INHERITS
+    REFERENCES
+'''
