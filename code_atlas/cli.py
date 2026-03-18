@@ -229,57 +229,65 @@ def _bare_handler(ctx, source, branch, force, verbose):
         )
 
 @app.command()
+@app.command()
 def graph(
     repo: str = typer.Argument(..., help="Git URL or local path to analyze."),
-    force: bool = typer.Option(
-        False,
-        "--force",
-        "-f",
-        help="Re-index all files and rebuild graph ignoring cache."
-    ),
-    visualize: bool = typer.Option(
-        False,
-        "--visualize",
-        "--viz",
-        "-z",
-        help="Generate an HTML visualization after building the graph.",
-    ),
-    output: str = typer.Option(
-        "graph.html",
-        "--output",
-        "-o",
-        help="Output filename for the visualization (used only with --visualize).",
-    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Re-index all files."),
+    visualize: bool = typer.Option(False, "--visualize", "--viz", "-z", help="Generate HTML viz."),
+    output: str = typer.Option("graph.html", "--output", "-o", help="Output filename."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
 ):
-    """
-    Build dependency graph for a repository.
-    """
+    """Build dependency graph for a repository."""
 
-    print("Running ingestion...")
-    # manifest = run_ingestion(repo,force=force)
-    manifest = _do_ingest(repo, branch=None, force=force, verbose=False)
+    _setup_logging(verbose)   # ← now INSIDE the function ✓
 
-    repo_id = manifest.repo_id
+    # Phase 1
+    console.rule("[bold cyan]Phase 1: Ingestion[/bold cyan]")
+    manifest = _do_ingest(repo, branch=None, force=force, verbose=verbose)
+    repo_id  = manifest.repo_id
+    _print_manifest(manifest)
 
-    print("Running parsing...")
+    # Phase 2
+    console.rule("[bold cyan]Phase 2: Parsing & IR Extraction[/bold cyan]")
     run_parsing(manifest)
 
-    print("Building graph...")
-    graph = build_graph(repo_id)
+    # Phase 3
+    console.rule("[bold cyan]Phase 3: Graph Construction[/bold cyan]")
+    graph_obj = build_graph(repo_id)
 
-    print("\nDead functions:")
-    dead = find_dead_functions(graph)
+    # Dead code
+    dead = find_dead_functions(graph_obj)
+    console.rule("[bold yellow]Dead Code Report[/bold yellow]")
 
-    for node in dead:
-        data = graph.nodes[node]
-        print(f"{data['name']} ({data['file']}:{data['start_line']})")
-        
+    if not dead:
+        console.print("[bold green]✓ No dead functions found.[/bold green]")
+    else:
+        from rich.table import Table
+        from rich import box as rbox
+
+        table = Table(
+            "Function", "Kind", "File", "Line",
+            box=rbox.ROUNDED,
+            header_style="bold magenta",
+            show_lines=True,
+        )
+        for node_id in dead:
+            d = graph_obj.nodes[node_id]
+            table.add_row(
+                f"[bold red]{d['name']}[/bold red]",
+                d.get("kind", ""),
+                d.get("file", ""),
+                str(d.get("start_line", "")),
+            )
+        console.print(table)
+        console.print(f"\n[bold red]✗ {len(dead)} dead symbol(s) found.[/bold red]")
+
+    # Visualisation
     if visualize:
-        print(f"Generating visualization at {output}...")
-        viz = GraphVisualizer(graph)
-        viz.build_html(output)
-        print(f"Graph visualization generated: {output}")
-
+        with console.status(f"[bold cyan]Generating HTML visualisation → {output}[/bold cyan]"):
+            viz = GraphVisualizer(graph_obj)
+            viz.build_html(output)
+        console.print(f"[bold green]✓ Visualisation written to:[/bold green] {output}")
 def main():
     args = _sys.argv[1:]
 
