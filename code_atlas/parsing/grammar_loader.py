@@ -84,3 +84,4 @@ def supported_languages() -> list[str]:
         if get_language(name) is not None:
             available.append(name)
     return sorted(set(available))
+

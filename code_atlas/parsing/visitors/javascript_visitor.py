@@ -210,8 +210,8 @@ class JavaScriptVisitor(BaseVisitor):
                               parent_class=None, parent_id=module_id)
 
         _link_children(result.nodes)
-        return result    
-
+        return result   
+    
     def _walk_statements(
         self, nodes, file_path, repo_id, source, result,
         parent_class, parent_id,
@@ -312,6 +312,7 @@ class JavaScriptVisitor(BaseVisitor):
                 child_id=node_id, parent_name=base, kind="inherits",
             ))
 
+
     def _handle_enum(self, node, file_path, repo_id, source, result, parent_id) -> None:
         lang = self._resolve_lang(file_path)
         name_node = node.child_by_field_name("name")
@@ -327,6 +328,7 @@ class JavaScriptVisitor(BaseVisitor):
             language=lang, parent_id=parent_id,
             signature=self.first_line(node, source),
         ))
+
 
     def _handle_method(self, node, file_path, repo_id, source, result,
                        parent_class, parent_id) -> None:
@@ -412,10 +414,10 @@ class JavaScriptVisitor(BaseVisitor):
                                       parent_class=parent_class, parent_id=node_id)
         return node_id
 
+
     def _handle_arrow(self, node, file_path, repo_id, source, result,
                       name: str, parent_class=None, parent_id=None,
                       exported=False, line_override: Optional[int] = None) -> Optional[str]:
-        """Emit a FUNCTION/LAMBDA node for an arrow_function node."""
         lang = self._resolve_lang(file_path)
         kind = NodeKind.LAMBDA if parent_class else NodeKind.FUNCTION
 
@@ -509,7 +511,9 @@ class JavaScriptVisitor(BaseVisitor):
 
 
     def _handle_export(self, node, file_path, repo_id, source, result, parent_id=None) -> None:
+  
         exported_names: list[str] = []
+
         for child in node.children:
             if child.type in _CLASS_TYPES:
                 self._handle_class(child, file_path, repo_id, source, result,
@@ -548,7 +552,6 @@ class JavaScriptVisitor(BaseVisitor):
 
     def _handle_var_decl_exported(self, node, file_path, repo_id, source,
                                    result, parent_id=None) -> None:
-        
         for declarator in node.children:
             if declarator.type != "variable_declarator":
                 continue
@@ -590,6 +593,7 @@ class JavaScriptVisitor(BaseVisitor):
 
     def _handle_wrapped_component(self, call_node, file_path, repo_id, source,
                                    result, parent_id) -> None:
+    
         inner = self._unwrap_component_call(call_node, source)
         if inner is None:
             return
@@ -613,23 +617,27 @@ class JavaScriptVisitor(BaseVisitor):
                     n.is_exported = True
 
     def _unwrap_component_call(self, call_node, source: bytes):
-
+    
         args = call_node.child_by_field_name("arguments")
         if args is None:
             return None
+
         arg_nodes = [c for c in args.children
                      if c.type not in (",", "(", ")", "comment")]
         if not arg_nodes:
             return None
 
         first_arg = arg_nodes[0]
+
         if first_arg.type in _ARROW_TYPES | _FUNCTION_TYPES:
             return first_arg
 
         if first_arg.type == "identifier":
             return first_arg
+
         if first_arg.type == "call_expression":
             return self._unwrap_component_call(first_arg, source)
+
         func = call_node.child_by_field_name("function")
         if func and func.type == "call_expression":
             if first_arg.type in _ARROW_TYPES | _FUNCTION_TYPES | {"identifier"}:
@@ -652,6 +660,7 @@ class JavaScriptVisitor(BaseVisitor):
             signature=self.node_text(decl_node, source)[:120].split("\n")[0],
             is_exported=exported,
         ))
+
 
     def _handle_expr_statement(self, node, file_path, repo_id, source,
                                result, parent_id=None) -> None:
@@ -712,7 +721,7 @@ class JavaScriptVisitor(BaseVisitor):
             callee = self._callee_name(call_node, source)
             if callee:
                result.call_edges.append(CallEdge(
-                    caller_id=parent_id,  
+                    caller_id=parent_id,   
                     callee_name=callee,
                     file_path=file_path,
                     line_number=call_node.start_point[0] + 1,
@@ -722,6 +731,7 @@ class JavaScriptVisitor(BaseVisitor):
 
     def _emit_require_nodes(self, node, file_path, repo_id, source,
                             result, module_id, lang) -> None:
+     
         for declarator in node.children:
             if declarator.type != "variable_declarator":
                 continue
@@ -734,6 +744,7 @@ class JavaScriptVisitor(BaseVisitor):
 
             target  = self._require_target(value_node, source)
             imp_str = self.node_text(node, source).strip()
+
             if name_node.type == "object_pattern":
                 imp_name = target or self.node_text(name_node, source)
             else:
@@ -755,6 +766,7 @@ class JavaScriptVisitor(BaseVisitor):
                     line_number=node.start_point[0] + 1,
                 ))
 
+
     def _resolve_lang(self, file_path: str) -> str:
         ext = file_path.rsplit(".", 1)[-1].lower()
         return "typescript" if ext in ("ts", "tsx") else "javascript"
@@ -770,7 +782,7 @@ class JavaScriptVisitor(BaseVisitor):
         if not leaf or leaf in _NOISY_CALLEES:
             return None
         return raw  
-
+    
     def _is_require_call(self, node: ts.Node) -> bool:
         if node.type != "call_expression":
             return False
@@ -854,13 +866,12 @@ class JavaScriptVisitor(BaseVisitor):
         return None
 
     def _extract_calls(self, node: ts.Node, source: bytes) -> list[str]:
-        """
-        Return deduplicated callee name strings for node.calls (string list).
-        """
+    
         calls: list[str] = []
         body = node.child_by_field_name("body")
         if body is None:
             return calls
+
         _NESTED_FN = _ARROW_TYPES | _FUNCTION_TYPES
         stack = list(body.children)
         while stack:
@@ -901,7 +912,6 @@ class JavaScriptVisitor(BaseVisitor):
                         if callee:
                             refs.add(callee.split(".")[-1].strip())
 
-            # jsx components: captures < ComponentName/>
             elif t == "jsx_opening_element":
                 name_node = n.child_by_field_name("name")
                 if name_node:
@@ -923,14 +933,12 @@ class JavaScriptVisitor(BaseVisitor):
                     if t == "pair" and ident == n.child_by_field_name("key"):
                         continue
                     refs.add(self.node_text(ident, source).strip())
-
             _NESTED_FN = _ARROW_TYPES | _FUNCTION_TYPES
             for child in n.children:
                 if child.type not in _NESTED_FN:
                     _collect(child)
 
         _collect(search_root)
-
         _SKIP = frozenset({
             "true", "false", "null", "undefined", "this", "super",
             "arguments", "void", "typeof", "instanceof", "new",
@@ -941,10 +949,8 @@ class JavaScriptVisitor(BaseVisitor):
             "static", "extends", "implements", "interface",
             "type", "enum", "namespace", "module", "declare",
         })
-        return [r for r in refs if len(r) > 1 and r not in _SKIP]   
-
+        return [r for r in refs if len(r) > 1 and r not in _SKIP]    
     def _handle_type_alias(self, node, file_path, repo_id, source, result, parent_id) -> None:
-        """Handle: type Foo<T> = Bar<T> | string"""
         lang = self._resolve_lang(file_path)
         name_node = node.child_by_field_name("name")
         if not name_node:
@@ -976,34 +982,19 @@ class JavaScriptVisitor(BaseVisitor):
             if child.type == "decorator":
                 decorators.append(self.node_text(child, source).strip())
             elif child.type not in ("comment", "\n"):
-                break  
+                break 
         return decorators
 
 
-#  Module-level helpers
 
 def _parse_es_import_target(imp_str: str) -> Optional[str]:
-    """
-    Extract the import target from an ES import statement.
-
-    For relative paths (starts with . or /) the FULL path stem is returned
-    so the builder can normalise it against the source file's directory.
-    e.g. "./components/AuthPage"   → "./components/AuthPage"
-         "../services/authService" → "../services/authService"
-
-    For npm packages the package name (first segment) is returned.
-    e.g. "react"      → "react"
-         "@types/node"→ "@types"
-    """
     m = re.search(r"""from\s+['"]([^'"]+)['"]""", imp_str)
     if not m:
         return None
     raw = m.group(1)
     if raw.startswith(".") or raw.startswith("/"):
-        # Relative / absolute local path: strip extension, keep full path
         return re.sub(r"\.\w+$", "", raw) or None
     else:
-        # npm package: first path segment, lowercase
         return raw.split("/")[0].lower() or None
 
 

@@ -389,5 +389,3 @@ class GraphStats(BaseModel):
             top = ", ".join(f"{n}({c})" for n, c in self.most_complex[:5])
             lines.append(f"Most complex : {top}")
         return "\n".join(lines)
-
-

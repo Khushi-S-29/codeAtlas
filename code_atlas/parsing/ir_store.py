@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 IR_DIR = DATA_DIR / "ir"
 IR_DIR.mkdir(parents=True, exist_ok=True)
 
-#DDL 
 
 _CREATE_NODES = """
 CREATE TABLE IF NOT EXISTS ir_nodes (
@@ -121,6 +120,7 @@ class IRStore:
     Persists and retrieves IRNode objects and typed edge objects
     for a single repository.
     """
+
     def __init__(self, repo_id: str, ir_dir: Optional[Path] = None) -> None:
         self.repo_id = repo_id
         _dir = ir_dir or IR_DIR
@@ -151,12 +151,11 @@ class IRStore:
             con.execute(_CREATE_REFERENCE_EDGES)
             for idx in _INDEXES:
                 con.execute(idx)
-            # Apply column migrations (idempotent)
             for stmt in _MIGRATIONS:
                 try:
                     con.execute(stmt)
                 except sqlite3.OperationalError:
-                    pass  # column already exists
+                    pass 
 
 
     def delete_file(self, file_path: str) -> int:
@@ -165,7 +164,6 @@ class IRStore:
             cur = con.execute("DELETE FROM ir_nodes WHERE file_path = ?", (file_path,))
             con.execute("DELETE FROM ir_call_edges WHERE file_path = ?", (file_path,))
             con.execute("DELETE FROM ir_import_edges WHERE source_file = ?", (file_path,))
-            # Inheritance edges: delete by child node ids that belonged to this file
             child_ids = [
                 r[0] for r in con.execute(
                     "SELECT id FROM ir_nodes WHERE file_path = ?", (file_path,)
@@ -301,7 +299,6 @@ class IRStore:
                 rows,
             )
 
-
     def load_all(self) -> list[IRNode]:
         with self._conn() as con:
             rows = con.execute("SELECT * FROM ir_nodes").fetchall()
@@ -334,7 +331,6 @@ class IRStore:
                 "SELECT * FROM ir_nodes WHERE lower(name) = lower(?)", (name,)
             ).fetchall()
         return [_row_to_node(r) for r in rows]
-
 
     def load_call_edges(self, file_path: Optional[str] = None) -> list[CallEdge]:
         with self._conn() as con:
@@ -411,8 +407,6 @@ class IRStore:
             "inheritance_edges": inherit_count,
         }
 
-
-
 def _node_to_row(node: IRNode) -> dict:
     return {
         "id":               node.id,
@@ -444,8 +438,6 @@ def _node_to_row(node: IRNode) -> dict:
 
 def _row_to_node(row: sqlite3.Row) -> IRNode:
     keys = row.keys()
-
-    # Deserialise typed_parameters safely
     typed_params_raw = row["typed_parameters"] if "typed_parameters" in keys else "[]"
     try:
         typed_params_data = json.loads(typed_params_raw or "[]")

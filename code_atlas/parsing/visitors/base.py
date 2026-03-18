@@ -83,3 +83,4 @@ class BaseVisitor(ABC):
                         return stripped.strip() or None
             break  
         return None
+    
