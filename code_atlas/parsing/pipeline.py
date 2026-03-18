@@ -19,11 +19,13 @@ _SKIP_LANGUAGES = frozenset({
 
 _DEFAULT_WORKERS = 4
 
+
 def run_parsing(
     manifest: RepoManifest,
     ir_dir: Optional[Path] = None,
     workers: int = _DEFAULT_WORKERS,
 ) -> ParsingReport:
+    # run phase 2 for all files in *manifest.change_set*.
     t_start = time.perf_counter()
     logger.info("═══ Phase 2: Parsing & IR Extraction ═══")
     logger.info("Repo     : %s", manifest.repo_id)
@@ -73,7 +75,7 @@ def run_parsing(
                     errors=[str(exc)],
                 ))
 
-    # ── Persist to IR store ────────────────────────────────────────────────────
+    #  Persist to IR store 
     for result in results:
         store.delete_file(result.file_path)
 
@@ -108,7 +110,6 @@ def run_parsing(
     return report
 
 def _parse_one(file_record: FileRecord, repo_root: Path, repo_id: str) -> ParseResult:
-    """Read and parse a single file. Runs in a thread pool worker."""
     abs_path = repo_root / file_record.path
 
     try:

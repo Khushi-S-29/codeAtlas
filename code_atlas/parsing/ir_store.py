@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -18,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 IR_DIR = DATA_DIR / "ir"
 IR_DIR.mkdir(parents=True, exist_ok=True)
+
+#DDL 
 
 _CREATE_NODES = """
 CREATE TABLE IF NOT EXISTS ir_nodes (
@@ -43,7 +44,8 @@ CREATE TABLE IF NOT EXISTS ir_nodes (
     calls            TEXT NOT NULL DEFAULT '[]',
     imports          TEXT NOT NULL DEFAULT '[]',
     bases            TEXT NOT NULL DEFAULT '[]',
-    decorators       TEXT NOT NULL DEFAULT '[]'
+    decorators       TEXT NOT NULL DEFAULT '[]',
+    "references"     TEXT NOT NULL DEFAULT '[]'
 );
 """
 
@@ -110,6 +112,7 @@ _MIGRATIONS = [
     "ALTER TABLE ir_nodes ADD COLUMN children         TEXT NOT NULL DEFAULT '[]'",
     "ALTER TABLE ir_nodes ADD COLUMN value            TEXT",
     "ALTER TABLE ir_nodes ADD COLUMN typed_parameters TEXT NOT NULL DEFAULT '[]'",
+    'ALTER TABLE ir_nodes ADD COLUMN "references" TEXT NOT NULL DEFAULT \'[]\'',
 ]
 
 
@@ -118,7 +121,6 @@ class IRStore:
     Persists and retrieves IRNode objects and typed edge objects
     for a single repository.
     """
-
     def __init__(self, repo_id: str, ir_dir: Optional[Path] = None) -> None:
         self.repo_id = repo_id
         _dir = ir_dir or IR_DIR
@@ -149,17 +151,21 @@ class IRStore:
             con.execute(_CREATE_REFERENCE_EDGES)
             for idx in _INDEXES:
                 con.execute(idx)
+            # Apply column migrations (idempotent)
             for stmt in _MIGRATIONS:
                 try:
                     con.execute(stmt)
                 except sqlite3.OperationalError:
-                    pass  
+                    pass  # column already exists
+
 
     def delete_file(self, file_path: str) -> int:
+        """Remove all IRNodes and edges for *file_path*."""
         with self._conn() as con:
             cur = con.execute("DELETE FROM ir_nodes WHERE file_path = ?", (file_path,))
             con.execute("DELETE FROM ir_call_edges WHERE file_path = ?", (file_path,))
             con.execute("DELETE FROM ir_import_edges WHERE source_file = ?", (file_path,))
+            # Inheritance edges: delete by child node ids that belonged to this file
             child_ids = [
                 r[0] for r in con.execute(
                     "SELECT id FROM ir_nodes WHERE file_path = ?", (file_path,)
@@ -187,13 +193,13 @@ class IRStore:
                    start_col, end_col, language,
                    parent_id, children, value, typed_parameters,
                    parent_class, return_type, docstring, signature, is_exported,
-                   parameters, calls, imports, bases, decorators)
+                   parameters, calls, imports, bases, decorators, "references")
                 VALUES
                   (:id, :name, :kind, :file_path, :start_line, :end_line,
                    :start_col, :end_col, :language,
                    :parent_id, :children, :value, :typed_parameters,
                    :parent_class, :return_type, :docstring, :signature, :is_exported,
-                   :parameters, :calls, :imports, :bases, :decorators)
+                   :parameters, :calls, :imports, :bases, :decorators, :references)
                 """,
                 rows,
             )
@@ -384,7 +390,6 @@ class IRStore:
             for r in rows
         ]
 
-
     def stats(self) -> dict:
         with self._conn() as con:
             total = con.execute("SELECT COUNT(*) FROM ir_nodes").fetchone()[0]
@@ -433,12 +438,14 @@ def _node_to_row(node: IRNode) -> dict:
         "imports":          json.dumps(node.imports),
         "bases":            json.dumps(node.bases),
         "decorators":       json.dumps(node.decorators),
+        "references":       json.dumps(node.references),
     }
 
 
 def _row_to_node(row: sqlite3.Row) -> IRNode:
     keys = row.keys()
 
+    # Deserialise typed_parameters safely
     typed_params_raw = row["typed_parameters"] if "typed_parameters" in keys else "[]"
     try:
         typed_params_data = json.loads(typed_params_raw or "[]")
@@ -470,4 +477,5 @@ def _row_to_node(row: sqlite3.Row) -> IRNode:
         imports=json.loads(row["imports"]),
         bases=json.loads(row["bases"]),
         decorators=json.loads(row["decorators"]),
+        references=json.loads(row["references"]) if "references" in keys else [],
     )

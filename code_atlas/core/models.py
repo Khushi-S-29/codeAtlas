@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -8,16 +7,18 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, computed_field
 
+
+# Phase1 - Ingestion
 class FileStatus(str, Enum):
-    NEW      = "new"      
-    MODIFIED = "modified"  
-    UNCHANGED= "unchanged" 
-    DELETED  = "deleted"   
+    NEW       = "new"
+    MODIFIED  = "modified"
+    UNCHANGED = "unchanged"
+    DELETED   = "deleted"
 
 
 class IngestionSource(str, Enum):
-    GIT_URL    = "git_url"    
-    LOCAL_PATH = "local_path" 
+    GIT_URL    = "git_url"
+    LOCAL_PATH = "local_path"
 
 class FileRecord(BaseModel):
     path: str
@@ -35,7 +36,7 @@ class FileRecord(BaseModel):
     def extension(self) -> str:
         return Path(self.path).suffix.lower()
 
-    @computed_field  
+    @computed_field
     @property
     def filename(self) -> str:
         return Path(self.path).name
@@ -43,24 +44,25 @@ class FileRecord(BaseModel):
     def __repr__(self) -> str:
         return f"<FileRecord {self.path} [{self.language}] {self.status}>"
 
+
 class RepoManifest(BaseModel):
     repo_id: str
-    source: str                        
+    source: str
     source_type: IngestionSource
     local_path: str
     git_branch: Optional[str] = None
-    git_commit: Optional[str] = None     
+    git_commit: Optional[str] = None
     indexed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    previous_index_at: Optional[datetime] = None  
+    previous_index_at: Optional[datetime] = None
     files: list[FileRecord] = Field(default_factory=list)
-
     model_config = {"use_enum_values": True}
+
     @computed_field  
     @property
     def change_set(self) -> list[FileRecord]:
         return [f for f in self.files if f.status in (FileStatus.NEW, FileStatus.MODIFIED)]
 
-    @computed_field 
+    @computed_field  
     @property
     def deleted_files(self) -> list[FileRecord]:
         return [f for f in self.files if f.status == FileStatus.DELETED]
@@ -73,19 +75,18 @@ class RepoManifest(BaseModel):
     @computed_field  
     @property
     def language_breakdown(self) -> dict[str, int]:
-        """{ language: file_count } for all non-deleted files."""
         result: dict[str, int] = {}
         for f in self.files:
             if f.status != FileStatus.DELETED:
                 result[f.language] = result.get(f.language, 0) + 1
         return dict(sorted(result.items(), key=lambda x: x[1], reverse=True))
 
-    @computed_field  
+    @computed_field
     @property
     def total_source_files(self) -> int:
         return len([f for f in self.files if f.status != FileStatus.DELETED])
 
-    @computed_field  
+    @computed_field 
     @property
     def total_lines(self) -> int:
         return sum(f.line_count for f in self.files if f.status != FileStatus.DELETED)
@@ -105,11 +106,8 @@ class RepoManifest(BaseModel):
         return "\n".join(lines)
 
 
+# Phase 2 — IR models
 class NodeKind(str, Enum):
-    """
-    Universal node types matching the spec's five categories:
-    Structural / Object-Oriented / Execution / Dependency / Behavior / Type
-    """
     # Structural
     FILE       = "file"
     MODULE     = "module"
@@ -140,19 +138,15 @@ class NodeKind(str, Enum):
     RETURN_STATEMENT = "return_statement"
     CONDITIONAL      = "conditional"
     LOOP             = "loop"
-
-    # Type
     TYPE_ANNOTATION = "type_annotation"
     GENERIC_TYPE    = "generic_type"
     UNION_TYPE      = "union_type"
-
-    # Legacy alias
     VARIABLE = "variable"
 
 
 class Parameter(BaseModel):
     name: str
-    type: Optional[str] = None     
+    type: Optional[str] = None    
     def __repr__(self) -> str:
         return f"{self.name}: {self.type}" if self.type else self.name
 
@@ -165,25 +159,24 @@ class IRNode(BaseModel):
         node_id, node_type (kind), language, name, value,
         start_line, end_line, start_column (start_col), end_column (end_col),
         parent (parent_id), children ([node_id]), file_path
+
+    Plus semantic enrichment:
+        typed_parameters, return_type, docstring, signature,
+        calls, imports, bases, decorators, is_exported
     """
     id:         str
     name:       str
     kind:       NodeKind
     file_path:  str
     language:   str
-
     start_line: int
     end_line:   int
     start_col:  int = 0
     end_col:    int = 0
-
     parent_id: Optional[str]  = None
     children:  list[str]      = Field(default_factory=list)
-
     value: Optional[str] = None
-
     typed_parameters: list[Parameter] = Field(default_factory=list)
-
     parameters: list[str] = Field(default_factory=list)
 
     parent_class: Optional[str] = None
@@ -194,6 +187,7 @@ class IRNode(BaseModel):
     imports:      list[str]     = Field(default_factory=list)
     bases:        list[str]     = Field(default_factory=list)
     decorators:   list[str]     = Field(default_factory=list)
+    references:   list[str]     = Field(default_factory=list)
     is_exported:  bool          = True
 
     model_config = {"use_enum_values": True}
@@ -202,11 +196,7 @@ class IRNode(BaseModel):
         return f"<IRNode {self.kind}:{self.name} @ {self.file_path}:{self.start_line}:{self.start_col}>"
 
 
-
 class CallEdge(BaseModel):
-    """
-    Spec: CallEdge { caller_function, callee_function, file_id, line_number }
-    """
     caller_id:      str
     callee_name:    str
     callee_id:      Optional[str] = None
@@ -217,9 +207,6 @@ class CallEdge(BaseModel):
 
 
 class ImportEdge(BaseModel):
-    """
-    Spec: ImportEdge { source_file, target_module }
-    """
     source_file:   str
     target_module: str
     alias:         Optional[str] = None
@@ -229,18 +216,12 @@ class ImportEdge(BaseModel):
 
 
 class InheritanceEdge(BaseModel):
-    """
-    Spec: InheritanceEdge { child_class, parent_class }
-    """
     child_id:    str
     parent_name: str
     parent_id:   Optional[str] = None
     kind:        str = "inherits"  
 
 class ReferenceEdge(BaseModel):
-    """
-    Spec: ReferenceEdge { source_node, target_node }
-    """
     source_id:   str
     target_name: str
     target_id:   Optional[str] = None
@@ -249,6 +230,7 @@ class ReferenceEdge(BaseModel):
 
 
 class ParseResult(BaseModel):
+    """Output of parsing a single file — nodes + typed edge objects."""
     file_path: str
     language:  str
     nodes:     list[IRNode]          = Field(default_factory=list)
@@ -292,7 +274,7 @@ class ParsingReport(BaseModel):
     parsed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     results:   list[ParseResult] = Field(default_factory=list)
 
-    @computed_field 
+    @computed_field  
     @property
     def all_nodes(self) -> list[IRNode]:
         nodes = []
@@ -316,7 +298,7 @@ class ParsingReport(BaseModel):
             edges.extend(r.import_edges)
         return edges
 
-    @computed_field 
+    @computed_field  
     @property
     def all_inheritance_edges(self) -> list[InheritanceEdge]:
         edges = []
@@ -324,7 +306,7 @@ class ParsingReport(BaseModel):
             edges.extend(r.inheritance_edges)
         return edges
 
-    @computed_field 
+    @computed_field  
     @property
     def all_reference_edges(self) -> list[ReferenceEdge]:
         edges = []
@@ -332,12 +314,12 @@ class ParsingReport(BaseModel):
             edges.extend(r.reference_edges)
         return edges
 
-    @computed_field  
+    @computed_field 
     @property
     def failed_files(self) -> list[str]:
         return [r.file_path for r in self.results if not r.success]
 
-    @computed_field  
+    @computed_field 
     @property
     def total_nodes(self) -> int:
         return sum(len(r.nodes) for r in self.results)
@@ -357,7 +339,7 @@ class ParsingReport(BaseModel):
                 lines.append(f"  ✗ {fp}")
         return "\n".join(lines)
 
-
+#phase3
 class EdgeKind(str, Enum):
     CONTAINS   = "contains"
     CALLS      = "calls"

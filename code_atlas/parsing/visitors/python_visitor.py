@@ -71,6 +71,7 @@ class PythonVisitor(BaseVisitor):
         if root.has_error:
             result.errors.append("Syntax errors present — partial parse may be incomplete")
 
+        #  Module node 
         module_id = self.make_node_id(repo_id, file_path, "__module__", 1)
         module_imports: list[str] = []
 
@@ -108,7 +109,6 @@ class PythonVisitor(BaseVisitor):
                         parent_class=None, parent_id=module_id, depth=0)
         _link_children(result.nodes)
         return result
-
 
     def _walk_body(
         self,
@@ -148,6 +148,9 @@ class PythonVisitor(BaseVisitor):
                 if expr:
                     self._handle_assignment(expr, file_path, repo_id, source, result, parent_id)
 
+            elif t == "type_alias_statement":
+                self._handle_type_alias(node, file_path, repo_id, source, result, parent_id)
+
             elif t in _BLOCK_TYPES and depth < 4:
                 self._walk_body(node, file_path, repo_id, source, result,
                                 parent_class=parent_class, parent_id=parent_id,
@@ -157,7 +160,6 @@ class PythonVisitor(BaseVisitor):
                 self._walk_body(node, file_path, repo_id, source, result,
                                 parent_class=parent_class, parent_id=parent_id,
                                 depth=depth + 1)
-
 
     def _handle_class(
         self,
@@ -238,6 +240,7 @@ class PythonVisitor(BaseVisitor):
 
         typed_params = self._extract_typed_params(node, source)
         calls        = self._extract_calls(node, source)
+        refs         = self._extract_references(node, source)
         decs         = decorators or self._get_decorators(node, source)
 
         node_id = self.make_node_id(
@@ -256,7 +259,7 @@ class PythonVisitor(BaseVisitor):
             return_type=self._extract_return_type(node, source),
             docstring=self._extract_docstring(node, source),
             signature=self.first_line(node, source),
-            calls=calls, decorators=decs,
+            calls=calls, references=refs, decorators=decs,
             is_exported=not name.startswith("_"),
         ))
 
@@ -279,6 +282,8 @@ class PythonVisitor(BaseVisitor):
             for lambda_node in self.find_all(body, "lambda"):
                 self._handle_lambda(lambda_node, file_path, repo_id, source, result, node_id)
 
+        # Nested defs (already handled by _walk_body recursion from _handle_class,
+        # but also needed for nested functions inside free functions)
         if body:
             self._walk_body(body, file_path, repo_id, source, result,
                             parent_class=parent_class, parent_id=node_id, depth=0)
@@ -410,6 +415,104 @@ class PythonVisitor(BaseVisitor):
                     calls.append(raw)
         return list(dict.fromkeys(calls))
 
+    def _extract_references(self, node: ts.Node, source: bytes) -> list[str]:
+        """
+        Extract identifier references that are NOT call expressions.
+        Python equivalents of the JSX/callback patterns:
+
+          Callback args      : sorted(items, key=my_func)  → key=my_func
+          Higher-order calls : map(fn, items)              → fn as argument
+          Decorator targets  : @app.route → 'route'
+          Return bare ident  : return my_validator
+          Conditional        : x if condition else fallback_fn
+          Assignment rhs     : handler = my_func  (non-call rhs)
+          List/tuple items   : validators = [check_a, check_b]
+          Dict values        : routes = {"path": view_fn}
+          Signal connect     : signal.connect(handler)  → identifier arg
+        """
+        refs: set[str] = set()
+        body = node.child_by_field_name("body")
+        search_root = body if body else node
+
+        _SKIP = frozenset({
+            "True", "False", "None", "self", "cls",
+            "int", "str", "float", "bool", "list", "dict", "set",
+            "tuple", "type", "object", "super",
+        })
+
+        def _collect(n: ts.Node) -> None:
+            t = n.type
+
+            if t == "keyword_argument":
+                val = n.child_by_field_name("value")
+                if val and val.type == "identifier":
+                    refs.add(self.node_text(val, source).strip())
+
+            elif t == "argument_list":
+                for child in n.children:
+                    if child.type == "identifier":
+                        refs.add(self.node_text(child, source).strip())
+
+            elif t == "return_statement":
+                for child in n.children:
+                    if child.type == "identifier":
+                        refs.add(self.node_text(child, source).strip())
+
+            elif t == "conditional_expression":
+                for child in n.children:
+                    if child.type == "identifier":
+                        refs.add(self.node_text(child, source).strip())
+
+            elif t in ("list", "tuple", "set"):
+                for child in n.children:
+                    if child.type == "identifier":
+                        refs.add(self.node_text(child, source).strip())
+
+            # Dict value: {"key": fn_ref}
+            elif t == "pair":
+                val = n.child_by_field_name("value")
+                if val and val.type == "identifier":
+                    refs.add(self.node_text(val, source).strip())
+
+            elif t == "assignment":
+                right = n.child_by_field_name("right")
+                if right and right.type == "identifier":
+                    refs.add(self.node_text(right, source).strip())
+
+            for child in n.children:
+                if child.type != "call":
+                    _collect(child)
+
+        _collect(search_root)
+        return [r for r in refs if len(r) > 1 and r not in _SKIP]
+
+    def _handle_type_alias(
+        self,
+        node: ts.Node,   
+        file_path: str,
+        repo_id: str,
+        source: bytes,
+        result: ParseResult,
+        parent_id: Optional[str],
+    ) -> None:
+        """Handle Python 3.12+ `type Foo = Bar` syntax → TYPE_ANNOTATION node."""
+        name_node = node.child_by_field_name("name")
+        if not name_node:
+            return
+        name     = self.node_text(name_node, source).strip()
+        val_node = node.child_by_field_name("value")
+        val_text = self.node_text(val_node, source).strip() if val_node else None
+        node_id  = self.make_node_id(repo_id, file_path, name, node.start_point[0] + 1)
+        result.nodes.append(IRNode(
+            id=node_id, name=name, kind=NodeKind.TYPE_ANNOTATION,
+            file_path=file_path,
+            start_line=node.start_point[0] + 1, end_line=node.end_point[0] + 1,
+            start_col=node.start_point[1], end_col=node.end_point[1],
+            language="python", parent_id=parent_id,
+            value=val_text,
+            signature=f"type {name} = {val_text or ''}".strip(),
+        ))
+
     def _get_decorators(self, node: ts.Node, source: bytes) -> list[str]:
         return [
             self.node_text(d, source).strip()
@@ -417,6 +520,7 @@ class PythonVisitor(BaseVisitor):
         ]
 
 
+# Module helpers 
 
 def _parse_python_import_target(imp_str: str) -> Optional[str]:
     import re
