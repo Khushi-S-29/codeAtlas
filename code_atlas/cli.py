@@ -9,9 +9,10 @@ import typer
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.table import Table
+from rich import box as rbox
 
 from code_atlas.graph.pipeline import build_graph
-from code_atlas.graph.deadcodeanalysis import find_dead_functions
+from code_atlas.graph.deadcodeanalysis import (find_dead_functions,find_unreachable_modules)
 from code_atlas.ingestion.pipeline import run_ingestion
 from code_atlas.parsing.pipeline import run_parsing
 from code_atlas.graph.visualiser import GraphVisualizer
@@ -256,38 +257,44 @@ def graph(
     graph_obj = build_graph(repo_id)
 
     # Dead code
-    dead = find_dead_functions(graph_obj)
-    console.rule("[bold yellow]Dead Code Report[/bold yellow]")
+    dead_functions = find_dead_functions(graph_obj)
+    dead_modules   = find_unreachable_modules(graph_obj)
 
-    if not dead:
-        console.print("[bold green]✓ No dead functions found.[/bold green]")
-    else:
-        from rich.table import Table
-        from rich import box as rbox
+    console.rule("[bold yellow]Dead Code Analysis[/bold yellow]")
 
-        table = Table(
-            "Function", "Kind", "File", "Line",
-            box=rbox.ROUNDED,
-            header_style="bold magenta",
-            show_lines=True,
+    if dead_functions:
+     table = Table(
+        "Function", "Kind", "File", "Line",
+        box=rbox.ROUNDED,
+        header_style="bold magenta",
+        show_lines=True,
+     )
+
+     for node_id in dead_functions:
+        d = graph_obj.nodes[node_id]
+        table.add_row(
+            f"[bold red]{d.get('name','?')}[/bold red]",
+            d.get("kind", ""),
+            d.get("file", ""),
+            str(d.get("start_line", "")),
         )
-        for node_id in dead:
-            d = graph_obj.nodes[node_id]
-            table.add_row(
-                f"[bold red]{d['name']}[/bold red]",
-                d.get("kind", ""),
-                d.get("file", ""),
-                str(d.get("start_line", "")),
-            )
-        console.print(table)
-        console.print(f"\n[bold red]✗ {len(dead)} dead symbol(s) found.[/bold red]")
 
+     console.print("[bold]Dead Functions ({})[/bold]".format(len(dead_functions)))
+     console.print(table)
+    else:
+     console.print("[green]✓ No dead functions detected.[/green]")
     # Visualisation
-    if visualize:
-        with console.status(f"[bold cyan]Generating HTML visualisation → {output}[/bold cyan]"):
-            viz = GraphVisualizer(graph_obj)
-            viz.build_html(output)
-        console.print(f"[bold green]✓ Visualisation written to:[/bold green] {output}")
+    # if visualize:
+        # with console.status(f"[bold cyan]Generating HTML visualisation → {output}[/bold cyan]"):
+        #     viz = GraphVisualizer(graph_obj)
+        #     viz.build_html(output)
+        # console.print(f"[bold green]✓ Visualisation written to:[/bold green] {output}")
+    if dead_modules:
+        console.print(f"\n[bold yellow]Unreachable Modules ({len(dead_modules)})[/bold yellow]")
+
+        for node_id in dead_modules:
+                 d = graph_obj.nodes[node_id]
+                 console.print(f"[red]{d.get('file','?')}[/red]")
 def main():
     args = _sys.argv[1:]
 
