@@ -1,0 +1,37 @@
+services:
+  app:
+    build: .
+    container_name: codeatlas_app
+    depends_on:
+      - qdrant
+      - ollama
+    ports:
+      - "127.0.0.1:8002:8000"
+    environment:
+      - API_KEY=mysecret123s
+      - OLLAMA_HOST=http://ollama_server:11434
+    volumes:
+      - ./code_atlas:/app/code_atlas
+      - hf_cache:/root/.cache/huggingface
+      - ./data:/app/data
+      - ./graphs:/root/.code_atlas/graphs
+
+
+  qdrant:
+    image: qdrant/qdrant
+    container_name: qdrant
+    ports:
+      - "6333:6333" 
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  ollama:
+    image: ollama/ollama
+    container_name: ollama_server
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  hf_cache:
+  qdrant_data:
+  ollama_data:

@@ -1,0 +1,53 @@
+# API
+fastapi
+uvicorn[standard]
+
+# Core
+pydantic
+python-dotenv
+
+# Graph
+networkx
+pyvis
+
+# Vector DB
+qdrant-client
+
+# Embeddings
+sentence-transformers
+scikit-learn
+numpy
+
+# LLM (local)
+ollama
+
+# Ingestion / parsing
+pathspec
+gitpython
+
+# Tree-sitter ecosystem (IMPORTANT for your project)
+tree-sitter
+tree-sitter-python
+tree-sitter-javascript
+tree-sitter-typescript
+tree-sitter-java
+tree-sitter-go
+tree-sitter-rust
+
+# HTTP / utils
+httpx
+requests
+tqdm
+rich
+typer
+
+# Testing
+pytest
+pytest-asyncio
+
+dulwich
+
+langchain
+langchain-core
+langchain-community
+langchain-ollama
