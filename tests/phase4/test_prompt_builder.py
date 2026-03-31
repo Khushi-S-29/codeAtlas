@@ -27,3 +27,4 @@ def test_prompt_empty_context():
     prompt = build_prompt("test", [])
 
     assert isinstance(prompt, str)
+    assert "No relevant code found" in prompt

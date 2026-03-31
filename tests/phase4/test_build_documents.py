@@ -1,15 +1,25 @@
-import networkx as nx
 from code_atlas.retrieval.build_documents import build_documents
+import networkx as nx
 
+def test_build_documents_returns_function_docs(tmp_path):
+    graph = nx.DiGraph()
 
-def test_build_documents():
+    file_path = "test.py"
+    code = """
+def add(a, b):
+    return a + b
 
-    G = nx.Graph()
+def sub(a, b):
+    return a - b
+"""
 
-    G.add_node(1, name="add", type="function", code="def add(a,b): return a+b")
+    file_full_path = tmp_path / file_path
+    file_full_path.write_text(code)
 
-    docs, metadata = build_documents(G)
+    graph.add_node("1", file=file_path)
 
-    assert len(docs) == 1
-    assert "add" in docs[0]
-    assert metadata[0]["name"] == "add"
+    docs, metadata = build_documents(graph)
+
+    assert len(docs) >= 1
+    assert "FUNCTION LEVEL DOCUMENT" in docs[0]
+    assert "def add" in docs[0] or "def sub" in docs[0]

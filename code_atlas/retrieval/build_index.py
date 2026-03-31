@@ -7,26 +7,43 @@ from qdrant_client.models import VectorParams, Distance, PointStruct
 from code_atlas.retrieval.load_graph import load_graph
 from code_atlas.retrieval.build_documents import build_documents
 from code_atlas.retrieval.embeddings import embed_texts
+from code_atlas.graph.builder import CodeGraphBuilder
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "codeatlas_nodes"
 
-def build_index():
+def build_index(repo_id: str, graph=None):
+    """
+    Builds the vector index in Qdrant. 
+    If the graph is missing, it builds it from the IR store automatically.
+    """
     logger.info("Starting indexing process...")
-    graph = load_graph()
-    
-    logger.info(f"Graph loaded. Nodes found: {len(graph.nodes) if hasattr(graph, 'nodes') else 'Unknown'}")
+
+    if graph is None:
+        try:
+            graph = load_graph(repo_id)
+            logger.info(f"Existing graph loaded for {repo_id}")
+        except FileNotFoundError:
+            logger.warning(f"Graph file (.pkl) not found. Building now from IR store...")
+            builder = CodeGraphBuilder(repo_id)
+            graph = builder.build()
+            if not graph:
+                logger.error(" Failed to build graph. Aborting indexing.")
+                return
+
+    nodes_count = len(graph.nodes) if hasattr(graph, 'nodes') else 0
+    logger.info(f"Graph ready. Nodes found: {nodes_count}")
 
     docs, metadata = build_documents(graph)
-
     logger.info(f"Documents created: {len(docs)}")
 
     if not docs:
         logger.warning("No documents to index! Check if your graph is empty.")
         return
 
+    logger.info("Generating embeddings (this may take a moment)...")
     embeddings = embed_texts(docs)
 
     client = QdrantClient(host="qdrant", port=6333)
@@ -69,7 +86,9 @@ def build_index():
         )
         logger.info(f"Upserted batch: {i} to {end_idx}")
 
-    logger.info("Indexing process complete.")
+    logger.info(" Indexing process complete. Project is ready for queries.")
 
 if __name__ == "__main__":
-    build_index()
+    import sys
+    repo = sys.argv[1] if len(sys.argv) > 1 else "github_com-Khushi-S-29-codeAtlas"
+    build_index(repo)
