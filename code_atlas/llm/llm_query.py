@@ -6,7 +6,7 @@ class LLMQuery:
     """
     Handles LLM-based question answering by combining context and prompt logic.
     """
-    def __init__(self, model: str = "llama2", host: str = "http://ollama:11434"):
+    def __init__(self, model: str = "llama2", host: str = "http://ollama_server:11434"):
         self.llm = OllamaLLM(model=model, host=host)
 
     def ask(self, query: str, context: List[str]) -> str:

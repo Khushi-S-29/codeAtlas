@@ -5,17 +5,43 @@ from sentence_transformers import SentenceTransformer
 from langchain_ollama import OllamaLLM
 from langchain_core.prompts import ChatPromptTemplate
 
-# --- CONFIG ---
 COLLECTION_NAME = "codeatlas_nodes"
 QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama_server:11434")
+
+_embedder = None
+
+
+def get_embedder():
+    global _embedder
+    if _embedder is None:
+        _embedder = SentenceTransformer("BAAI/bge-large-en-v1.5", device="cpu")
+    return _embedder
+
+
+def boost_score(query: str, payload: dict, vector_score: float) -> float:
+    score = vector_score
+    query_lower = query.lower()
+
+    file_path = payload.get("file", "") or ""
+    filename = file_path.split("/")[-1].lower()
+    func_name = payload.get("name", "") or ""
+
+    if file_path.lower() in query_lower:
+        score += 0.08
+    elif filename and filename in query_lower:
+        score += 0.05
+
+    if func_name and func_name.lower() in query_lower:
+        score += 0.05
+
+    return score
 
 
 class LocalEmbeddingWrapper:
-    """Wrapper for SentenceTransformer embeddings."""
     def __init__(self):
-        self.model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device="cpu")
+        self.model = get_embedder()
 
     def embed_query(self, text: str):
         return self.model.encode(text).tolist()
@@ -25,50 +51,72 @@ class LocalEmbeddingWrapper:
 
 
 class LangChainRAG:
-    """LangChain-based RAG pipeline mirroring native RAG logic."""
     def __init__(self):
         self.embedder = LocalEmbeddingWrapper()
         self.client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
         self.llm = OllamaLLM(model="llama2", base_url=OLLAMA_BASE_URL)
-
         self.prompt = ChatPromptTemplate.from_template(
-            "Use ONLY the following context to answer.\n\nContext:\n{context}\n\nQuestion:\n{question}\n\nAnswer:"
+            "You are a senior software engineer analyzing a codebase called CodeAtlas.\n\n"
+            "Answer the question using ONLY the code context provided below.\n"
+            "Be specific: mention actual function names, file names, and what they do.\n"
+            "Do NOT hallucinate code that is not in the context.\n\n"
+            "Context:\n{context}\n\nQuestion:\n{question}\n\nAnswer:"
         )
 
     def retrieve(self, query: str, k: int = 5) -> List[str]:
-        """Retrieve top-k relevant code snippets from Qdrant with filtering."""
         query_vector = self.embedder.embed_query(query)
+
         results = self.client.query_points(
             collection_name=COLLECTION_NAME,
             query=query_vector,
-            limit=20
+            limit=30,
+            with_payload=True
         )
 
-        texts = [
-            p.payload["text"]
-            for p in results.points
-            if p.payload and "FUNCTION LEVEL DOCUMENT" in p.payload.get("text", "")
-        ]
+        scored_points = []
+        for p in results.points:
+            payload = p.payload or {}
+            if not payload:
+                continue
+            boosted = boost_score(query, payload, p.score)
+            scored_points.append((boosted, p))
+        scored_points.sort(key=lambda x: x[0], reverse=True)
 
-        filtered = [
-            t for t in texts
-            if "Code:" in t and ("def " in t or "class " in t) and "Node ID:" not in t and "Name:" not in t
-        ]
-        if not filtered:
-            filtered = texts
+        seen_texts = set()
+        filtered = []
 
-        filtered = sorted(
-            filtered,
-            key=lambda x: ("def " in x, "class " in x, len(x)),
-            reverse=True
-        )
+        for _, p in scored_points:
+            payload = p.payload or {}
+            file_path = payload.get("file", "")
+            text = payload.get("text", "")
+
+            if not text:
+                continue
+
+            if any(x in file_path.lower() for x in ["test_", "/tests/", "\\tests\\"]):
+                continue
+
+            is_new_format = any(f"TYPE: {t}" in text for t in ["FUNCTION", "CLASS", "METHOD", "FILE", "MODULE_LEVEL"])
+            is_old_format = "FUNCTION LEVEL DOCUMENT" in text
+
+            if not (is_new_format or is_old_format):
+                continue
+
+            if "Code:" not in text:
+                continue
+
+            if text in seen_texts:
+                continue
+
+            seen_texts.add(text)
+            filtered.append(text)
 
         return filtered[:k]
 
     def ask(self, query: str, k: int = 5):
-        """Retrieve context and ask LLM."""
         context_list = self.retrieve(query, k=k)
-        context = "\n\n".join(context_list)
+        context = "\n\n---\n\n".join(context_list)
+
         if not context:
             return {
                 "query": query,

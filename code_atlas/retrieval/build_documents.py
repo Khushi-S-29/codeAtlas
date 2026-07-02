@@ -1,5 +1,9 @@
-def node_to_text(node_id, data):
+import os
+import re
+from pathlib import Path
 
+
+def node_to_text(node_id, data):
     name = data.get("name", "")
     node_type = data.get("type", "")
     code = data.get("code", "")
@@ -14,9 +18,6 @@ Code:
 """
 
     return text
-import os
-import re
-from pathlib import Path
 
 
 def extract_functions(code):
@@ -30,21 +31,25 @@ def extract_functions(code):
 def find_file(file_name):
     """
     Works for:
-    - pytest tmp_path (/tmp)
-    - docker (/app)
-    - local execution
+    - Local execution
+    - Docker (/app)
+    - pytest temp directories (/tmp)
     """
 
+ 
     if os.path.exists(file_name):
         return file_name
 
+    
     app_path = os.path.join("/app", file_name)
     if os.path.exists(app_path):
         return app_path
 
+    
     tmp_dir = Path("/tmp")
     if tmp_dir.exists():
-        for path in tmp_dir.rglob(file_name):
+        relative_name = Path(file_name).name
+        for path in tmp_dir.rglob(relative_name):
             return str(path)
 
     return None
@@ -90,9 +95,14 @@ def build_documents(graph):
                 continue
 
             func_name_match = re.match(r"def\s+(\w+)\(", func)
-            func_name = func_name_match.group(1) if func_name_match else f"func_{idx}"
+            func_name = (
+                func_name_match.group(1)
+                if func_name_match
+                else f"func_{idx}"
+            )
 
-            docs.append(f"""FUNCTION LEVEL DOCUMENT
+            docs.append(
+                f"""FUNCTION LEVEL DOCUMENT
 
 Function Name: {func_name}
 File: {file_path}
@@ -109,13 +119,18 @@ implementation of {func_name}
 
 Code:
 {func}
-""")
-            metadata.append({
-                "file": file_path,
-                "function": func_name,
-                "chunk": idx,
-                "type": "function"
-            })
+"""
+            )
+
+            metadata.append(
+                {
+                    "node_id": node_id,
+                    "file": file_path,
+                    "function": func_name,
+                    "chunk": idx,
+                    "type": "function",
+                }
+            )
 
         docs.append(
             f"""FILE LEVEL DOCUMENT
@@ -127,11 +142,14 @@ Code:
 """
         )
 
-        metadata.append({
-            "file": file_path,
-            "function": "full_file",
-            "chunk": 0,
-            "type": "file"
-        })
+        metadata.append(
+            {
+                "node_id": node_id,
+                "file": file_path,
+                "function": "full_file",
+                "chunk": 0,
+                "type": "file",
+            }
+        )
 
     return docs, metadata
