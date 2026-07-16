@@ -1,8 +1,11 @@
 import uuid
 import logging
 import numpy as np
+import os
+import pickle
+
 from qdrant_client import QdrantClient
-from qdrant_client.models import VectorParams, Distance, PointStruct
+from qdrant_client.models import VectorParams, Distance, PointStruct, PayloadSchemaType
 
 from code_atlas.retrieval.load_graph import load_graph
 from code_atlas.retrieval.build_documents import build_documents
@@ -33,6 +36,12 @@ def build_index(repo_id: str, graph=None):
                 logger.error("Graph build failed")
                 return
 
+            os.makedirs("/root/.code_atlas/graphs", exist_ok=True)
+            with open(f"/root/.code_atlas/graphs/{repo_id}.pkl", "wb") as f:
+                pickle.dump(graph, f)
+
+            logger.info(f"Graph saved to /root/.code_atlas/graphs/{repo_id}.pkl")
+
     nodes_count = len(graph.nodes) if hasattr(graph, "nodes") else 0
     logger.info(f"Graph nodes: {nodes_count}")
 
@@ -62,6 +71,12 @@ def build_index(repo_id: str, graph=None):
                 size=vector_size,
                 distance=Distance.COSINE
             )
+        )
+
+        client.create_payload_index(
+            collection_name=COLLECTION_NAME,
+            field_name="node_id",
+            field_schema=PayloadSchemaType.KEYWORD,
         )
 
     batch_size = 64

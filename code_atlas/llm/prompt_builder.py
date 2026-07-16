@@ -22,7 +22,7 @@ Your ONLY source of truth is the retrieved code below.
 INSTRUCTIONS
 ========================
 
-1. Read ALL retrieved code before answering.
+1. Analyze only the retrieved context provided.
 
 2. If the question mentions a specific function, method, class, variable, or file name:
    - Find the EXACT matching name in the retrieved context.
@@ -62,6 +62,12 @@ INSTRUCTIONS
 
 9. Answer in concise technical language.
 
+10. For every claim, mention the code element that supports it.
+
+For conceptual questions:
+- summarize only concepts explicitly present in retrieved code.
+- do not infer components outside the context.
+
 ========================
 RETRIEVED CODE
 ========================
@@ -71,5 +77,5 @@ Context:
 Question:
 {query}
 
-Answer (step-by-step):
+Technical Explanation:
 """.strip()

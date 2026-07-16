@@ -1,15 +1,10 @@
 def expand_nodes(graph, node_ids, depth=1):
-
-    expanded = set(node_ids)
+    expanded = set(n for n in node_ids if n in graph)
 
     for _ in range(depth):
-
         new_nodes = set()
-
         for node in expanded:
-            neighbors = list(graph.neighbors(node))
-            new_nodes.update(neighbors)
-
+            new_nodes.update(graph.neighbors(node))
         expanded.update(new_nodes)
 
     return list(expanded)
