@@ -1,6 +1,7 @@
 import os
 from typing import List
 from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchValue
 from sentence_transformers import SentenceTransformer
 from langchain_ollama import OllamaLLM
 from langchain_core.prompts import ChatPromptTemplate
@@ -24,9 +25,9 @@ def boost_score(query: str, payload: dict, vector_score: float) -> float:
     score = vector_score
     query_lower = query.lower()
 
-    file_path = payload.get("file", "") or ""
+    file_path = payload.get("file_path") or payload.get("file", "") or ""
     filename = file_path.split("/")[-1].lower()
-    func_name = payload.get("name", "") or ""
+    func_name = payload.get("symbol") or payload.get("function", "") or ""
 
     if file_path.lower() in query_lower:
         score += 0.08
@@ -51,9 +52,10 @@ class LocalEmbeddingWrapper:
 
 
 class LangChainRAG:
-    def __init__(self):
+    def __init__(self, repo_id: str = None):
         self.embedder = LocalEmbeddingWrapper()
         self.client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+        self.repo_id = repo_id
         self.llm = OllamaLLM(model="llama2", base_url=OLLAMA_BASE_URL)
         self.prompt = ChatPromptTemplate.from_template(
             "You are a senior software engineer analyzing a codebase called CodeAtlas.\n\n"
@@ -66,12 +68,24 @@ class LangChainRAG:
     def retrieve(self, query: str, k: int = 5) -> List[str]:
         query_vector = self.embedder.embed_query(query)
 
-        results = self.client.query_points(
-            collection_name=COLLECTION_NAME,
-            query=query_vector,
-            limit=30,
-            with_payload=True
-        )
+        query_kwargs = {
+            "collection_name": COLLECTION_NAME,
+            "query": query_vector,
+            "limit": 30,
+            "with_payload": True,
+        }
+
+        if self.repo_id:
+            query_kwargs["query_filter"] = Filter(
+                must=[
+                    FieldCondition(
+                        key="repo_id",
+                        match=MatchValue(value=self.repo_id)
+                    )
+                ]
+            )
+
+        results = self.client.query_points(**query_kwargs)
 
         scored_points = []
         for p in results.points:
@@ -87,7 +101,7 @@ class LangChainRAG:
 
         for _, p in scored_points:
             payload = p.payload or {}
-            file_path = payload.get("file", "")
+            file_path = payload.get("file_path") or payload.get("file", "") or ""
             text = payload.get("text", "")
 
             if not text:

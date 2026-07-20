@@ -5,11 +5,18 @@ from pathlib import Path
 INDEXABLE_KINDS = {"module", "class", "function", "method", "constructor", "enum"}
 
 
+_EXTRA_SEARCH_ROOTS = [
+    "/app_repo",
+    os.environ.get("CODE_ATLAS_REPO_ROOT"),  
+]
+
+
 def find_file(file_name):
     """
     Works for:
     - Local execution
     - Docker (/app)
+    - Cloned repos under /app_repo (or CODE_ATLAS_REPO_ROOT if set)
     - pytest temp directories (/tmp)
     """
     if os.path.exists(file_name):
@@ -18,6 +25,13 @@ def find_file(file_name):
     app_path = os.path.join("/app", file_name)
     if os.path.exists(app_path):
         return app_path
+
+    for root in _EXTRA_SEARCH_ROOTS:
+        if not root:
+            continue
+        candidate = os.path.join(root, file_name)
+        if os.path.exists(candidate):
+            return candidate
 
     tmp_dir = Path("/tmp")
     if tmp_dir.exists():
@@ -40,10 +54,6 @@ def _read_lines(file_path):
 
 
 def _slice_code(lines, start_line, end_line):
-    """
-    start_line/end_line are 1-indexed, inclusive (as produced by
-    most Python AST-based parsers). Falls back gracefully if missing.
-    """
     if start_line is None or end_line is None:
         return None
 
@@ -113,20 +123,7 @@ File: {file_path}
 """
 
 
-def build_documents(graph):
-    """
-    One document per graph node. node_id, node_type (kind), and symbol
-    (name) are taken directly from the graph's own attributes, and code
-    is sliced from the source file using the node's start_line/end_line
-    — no regex extraction, no name-matching guesswork.
-
-    Only structurally meaningful kinds are indexed (INDEXABLE_KINDS).
-    Nodes like single-line 'assignment' and 'import' statements are
-    skipped — they add noise to the vector index without being useful
-    retrieval units. They remain in the graph itself and are still
-    traversable during expand_nodes(), just not embedded/returned as
-    context.
-    """
+def build_documents(graph, repo_id=None):
     docs = []
     metadata = []
 
@@ -165,13 +162,13 @@ def build_documents(graph):
 
         metadata.append(
             {
+                "repo_id": repo_id,
                 "node_id": node_id,
                 "node_type": kind,
                 "symbol": name,
                 "file_path": file_path,
                 "start_line": start_line,
                 "end_line": end_line,
-                # backward-compatible keys
                 "file": file_path,
                 "type": kind,
                 "function": name or "unknown",

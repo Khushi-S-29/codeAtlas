@@ -45,7 +45,7 @@ def build_index(repo_id: str, graph=None):
     nodes_count = len(graph.nodes) if hasattr(graph, "nodes") else 0
     logger.info(f"Graph nodes: {nodes_count}")
 
-    docs, metadata = build_documents(graph)
+    docs, metadata = build_documents(graph, repo_id)
     logger.info(f"Documents: {len(docs)}")
 
     if not docs:

@@ -5,6 +5,7 @@ from typing import List
 
 from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 from code_atlas.llm.prompt_builder import build_prompt
 from code_atlas.llm.answer_generator import query_ollama
@@ -46,9 +47,9 @@ def boost_score(query: str, payload: dict, vector_score: float) -> float:
     score = vector_score
     query_lower = query.lower()
 
-    file_path = payload.get("file", "") or ""
+    file_path = payload.get("file_path") or payload.get("file", "") or ""
     filename = file_path.split("/")[-1].lower()
-    func_name = payload.get("name", "") or ""
+    func_name = payload.get("symbol") or payload.get("function", "") or ""
 
     if file_path.lower() in query_lower:
         score += 0.08
@@ -83,19 +84,31 @@ class RAGQuery:
             query_vector = self.embedder.encode(query).tolist()
 
         with timer("vector search"):
-            results = self.client.query_points(
-                collection_name=COLLECTION_NAME,
-                query=query_vector,
-                limit=30,
-                with_payload=True
-            )
+            query_kwargs = {
+                "collection_name": COLLECTION_NAME,
+                "query": query_vector,
+                "limit": 30,
+                "with_payload": True,
+            }
+
+            if self.repo_id:
+                query_kwargs["query_filter"] = Filter(
+                    must=[
+                        FieldCondition(
+                            key="repo_id",
+                            match=MatchValue(value=self.repo_id)
+                        )
+                    ]
+                )
+
+            results = self.client.query_points(**query_kwargs)
 
         points = results.points
 
         print(f"\n[RETRIEVED] top {len(points)} raw results:")
         for i, point in enumerate(points):
             payload = point.payload or {}
-            print(f"  [{i}] score={point.score:.3f} | file={payload.get('file')} | type={payload.get('type')} | name={payload.get('name')}")
+            print(f"  [{i}] score={point.score:.3f} | file={payload.get('file_path') or payload.get('file')} | type={payload.get('node_type') or payload.get('type')} | name={payload.get('symbol') or payload.get('function')}")
 
         with timer("reranking"):
             scored_points = []
@@ -113,7 +126,7 @@ class RAGQuery:
 
         for _, point in scored_points:
             payload = point.payload or {}
-            file_path = payload.get("file", "")
+            file_path = payload.get("file_path") or payload.get("file", "") or ""
 
             if any(x in file_path.lower() for x in ["test_", "/tests/", "\\tests\\"]):
                 continue
@@ -148,9 +161,14 @@ class RAGQuery:
                     try:
                         extra, _ = self.client.scroll(
                             collection_name=COLLECTION_NAME,
-                            scroll_filter={
-                                "must": [{"key": "node_id", "match": {"value": node_id}}]
-                            },
+                            scroll_filter=Filter(
+                                must=[
+                                    FieldCondition(
+                                        key="node_id",
+                                        match=MatchValue(value=node_id)
+                                    )
+                                ]
+                            ),
                             limit=3,
                             with_payload=True
                         )
