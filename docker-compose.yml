@@ -16,7 +16,6 @@ services:
       - ./data:/app/data
       - ./graphs:/root/.code_atlas/graphs
 
-
   qdrant:
     image: qdrant/qdrant
     container_name: qdrant

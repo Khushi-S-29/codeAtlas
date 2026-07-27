@@ -15,7 +15,7 @@ from code_atlas.graph.deadcodeanalysis import find_dead_functions
 from code_atlas.ingestion.pipeline import run_ingestion
 from code_atlas.parsing.pipeline import run_parsing
 from code_atlas.graph.visualiser import GraphVisualizer
-
+from code_atlas.pipeline.main_pipeline import run_full_pipeline
 
 console = Console()
 
@@ -288,10 +288,33 @@ def graph(
             viz = GraphVisualizer(graph_obj)
             viz.build_html(output)
         console.print(f"[bold green]✓ Visualisation written to:[/bold green] {output}")
+
+@app.command("build")
+def build(
+    repo: str = typer.Argument(..., help="Git URL or local directory."),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+):
+    """
+    Run the complete CodeAtlas pipeline.
+    """
+
+    _setup_logging(verbose)
+
+    console.rule("[bold cyan]CodeAtlas Full Pipeline[/bold cyan]")
+
+    try:
+        run_full_pipeline(repo)
+    except Exception as exc:
+        console.print(f"[red]Pipeline failed:[/red] {exc}")
+        if verbose:
+            console.print_exception()
+        raise typer.Exit(1)
+
+    console.print("[bold green]✓ Pipeline completed successfully.[/bold green]")
 def main():
     args = _sys.argv[1:]
 
-    known_cmds = {"ingest", "parse", "graph", "index", "search", "--help", "-h", "--version"}
+    known_cmds = {"ingest", "parse", "graph", "index", "search", "--help", "-h", "build","--version"}
 
     if args and not args[0].startswith("-") and args[0] not in known_cmds:
         _sys.argv = [_sys.argv[0], "ingest"] + args

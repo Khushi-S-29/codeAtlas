@@ -7,43 +7,70 @@ INDEXABLE_KINDS = {"module", "class", "function", "method", "constructor", "enum
 
 _EXTRA_SEARCH_ROOTS = [
     "/app_repo",
-    os.environ.get("CODE_ATLAS_REPO_ROOT"),  
+    os.environ.get("CODE_ATLAS_REPO_ROOT"), 
+    "/root/.code_atlas/repos", 
+    "/repos",
 ]
 
 
-def find_file(file_name):
+def find_file(file_name, repo_root=None):
     """
-    Works for:
-    - Local execution
-    - Docker (/app)
-    - Cloned repos under /app_repo (or CODE_ATLAS_REPO_ROOT if set)
-    - pytest temp directories (/tmp)
+    Resolve relative graph file paths to actual files inside:
+    - local execution
+    - Docker /app
+    - manually cloned repos (/app_repo)
+    - CodeAtlas managed clones (/root/.code_atlas/repos)
     """
+
+    if not file_name:
+        return None
+
+    if repo_root:
+        candidate = Path(repo_root) / file_name
+        if candidate.exists():
+            return str(candidate)
+
     if os.path.exists(file_name):
         return file_name
 
-    app_path = os.path.join("/app", file_name)
-    if os.path.exists(app_path):
-        return app_path
+    normalized = file_name.replace("\\", "/").lstrip("./")
 
-    for root in _EXTRA_SEARCH_ROOTS:
+    search_roots = [
+        "/app",
+        "/app_repo",
+        os.environ.get("CODE_ATLAS_REPO_ROOT"),
+        "/root/.code_atlas/repos",
+        "/repos",
+    ]
+
+    for root in search_roots:
         if not root:
             continue
-        candidate = os.path.join(root, file_name)
-        if os.path.exists(candidate):
-            return candidate
+
+        root_path = Path(root)
+
+        if not root_path.exists():
+            continue
+
+        for path in root_path.rglob("*"):
+            if not path.is_file():
+                continue
+
+            full_path = str(path).replace("\\", "/")
+
+            if full_path.endswith(normalized):
+                return str(path)
 
     tmp_dir = Path("/tmp")
+
     if tmp_dir.exists():
-        relative_name = Path(file_name).name
-        for path in tmp_dir.rglob(relative_name):
+        for path in tmp_dir.rglob(Path(file_name).name):
             return str(path)
 
     return None
 
-
-def _read_lines(file_path):
-    full_path = find_file(file_path)
+def _read_lines(file_path,repo_root=None):
+    full_path = find_file(file_path,repo_root)
     if not full_path:
         return None
     try:
@@ -123,7 +150,7 @@ File: {file_path}
 """
 
 
-def build_documents(graph, repo_id=None):
+def build_documents(graph, repo_id=None, repo_root=None):
     docs = []
     metadata = []
 
@@ -144,7 +171,7 @@ def build_documents(graph, repo_id=None):
             continue
 
         if file_path not in file_cache:
-            file_cache[file_path] = _read_lines(file_path)
+            file_cache[file_path] = _read_lines(file_path,repo_root)
 
         lines = file_cache[file_path]
         if lines is None:

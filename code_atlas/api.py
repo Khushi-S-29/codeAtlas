@@ -1,13 +1,14 @@
 from fastapi import FastAPI, HTTPException, Depends, Header
 from pydantic import BaseModel
 from typing import List, Optional
+from pathlib import Path
 import os
 
 from code_atlas.query.rag_query import RAGQuery
 from code_atlas.llm.llm_query import LLMQuery
 from code_atlas.query.langchain_rag import LangChainRAG
 
-API_KEY = os.getenv("API_KEY", "mysecret123s") 
+API_KEY = os.getenv("API_KEY", "mysecret123s")
 app = FastAPI(title="CodeAtlas API", version="1.0")
 
 
@@ -16,17 +17,31 @@ def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-KEY")):
         raise HTTPException(status_code=401, detail="Invalid or missing API Key")
     return x_api_key
 
+
+def get_current_repo():
+    path = Path("/root/.code_atlas/current_repo.txt")
+
+    if path.exists():
+        return path.read_text().strip()
+
+    return None
+
+
 rag = RAGQuery()
 llm = LLMQuery(model="llama2")
 langchain_rag = LangChainRAG()
 
+
 class QueryRequest(BaseModel):
     query: str
+    repo_id: Optional[str] = None
     k: Optional[int] = 3
+
 
 class QueryResponse(BaseModel):
     answer: str
     context: List[str]
+
 
 class LangChainResponse(BaseModel):
     query: str
@@ -37,22 +52,32 @@ class LangChainResponse(BaseModel):
 def root():
     return {"status": "CodeAtlas running", "mode": "Graph-RAG"}
 
+
 @app.post("/query", response_model=QueryResponse)
 async def query_endpoint(req: QueryRequest, _: str = Depends(verify_api_key)):
     """Standard RAG pipeline: Retrieve from Graph -> Generate with LLM"""
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Empty query")
 
-    context = rag.retrieve(req.query, k=req.k)
+    repo_id = req.repo_id or get_current_repo()
+    rag_instance = RAGQuery(repo_id=repo_id)
+
+    context = rag_instance.retrieve(req.query, k=req.k)
     answer = llm.ask(req.query, context)
 
     return {"answer": answer, "context": context}
 
+
 @app.post("/rag_query")
 async def rag_only(req: QueryRequest, _: str = Depends(verify_api_key)):
     """Debug Endpoint: Returns only the retrieved graph nodes"""
-    context = rag.retrieve(req.query, k=req.k)
+
+    repo_id = req.repo_id or get_current_repo()
+    rag_instance = RAGQuery(repo_id=repo_id)
+
+    context = rag_instance.retrieve(req.query, k=req.k)
     return {"query": req.query, "context": context}
+
 
 @app.post("/langchain_rag", response_model=LangChainResponse)
 async def langchain_rag_endpoint(req: QueryRequest, _: str = Depends(verify_api_key)):
